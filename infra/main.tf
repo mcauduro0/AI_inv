@@ -23,15 +23,16 @@ terraform {
     }
   }
 
-  backend "s3" {
-    # Configure this for your DigitalOcean Spaces backend
-    # endpoint                    = "nyc3.digitaloceanspaces.com"
-    # bucket                      = "investment-system-tfstate"
-    # key                         = "terraform.tfstate"
-    # region                      = "us-east-1" # Required but ignored for DO Spaces
-    # skip_credentials_validation = true
-    # skip_metadata_api_check     = true
-  }
+  # Using local backend for initial deployment
+  # To use S3/Spaces backend, uncomment and configure:
+  # backend "s3" {
+  #   endpoint                    = "nyc3.digitaloceanspaces.com"
+  #   bucket                      = "investment-system-tfstate"
+  #   key                         = "terraform.tfstate"
+  #   region                      = "us-east-1"
+  #   skip_credentials_validation = true
+  #   skip_metadata_api_check     = true
+  # }
 }
 
 # =============================================================================
@@ -60,9 +61,8 @@ provider "helm" {
 # Data Sources
 # =============================================================================
 
-data "digitalocean_kubernetes_versions" "current" {
-  version_prefix = "1.29."
-}
+# Using hardcoded K8s version since data source requires valid prefix
+# Available versions can be checked via DO API
 
 # =============================================================================
 # VPC - Virtual Private Cloud
@@ -82,7 +82,7 @@ resource "digitalocean_vpc" "main" {
 resource "digitalocean_kubernetes_cluster" "main" {
   name         = "${var.project_name}-k8s-${var.environment}"
   region       = var.region
-  version      = data.digitalocean_kubernetes_versions.current.latest_version
+  version      = "1.32.10-do.2"  # Latest stable K8s version
   vpc_uuid     = digitalocean_vpc.main.id
   auto_upgrade = true
   surge_upgrade = true
@@ -178,9 +178,9 @@ resource "digitalocean_database_firewall" "postgres_fw" {
 # =============================================================================
 
 resource "digitalocean_database_cluster" "redis" {
-  name                 = "${var.project_name}-redis-${var.environment}"
-  engine               = "redis"
-  version              = "7"
+  name                 = "${var.project_name}-valkey-${var.environment}"
+  engine               = "valkey"
+  version              = "8"
   size                 = var.redis_size
   region               = var.region
   node_count           = var.redis_node_count
@@ -201,50 +201,25 @@ resource "digitalocean_database_firewall" "redis_fw" {
 
 # =============================================================================
 # DigitalOcean Spaces (S3-compatible Object Storage)
+# Note: Spaces requires separate API credentials (Spaces Access Keys)
+# Create them at: https://cloud.digitalocean.com/account/api/spaces
 # =============================================================================
 
-resource "digitalocean_spaces_bucket" "main" {
-  name   = "${var.project_name}-storage-${var.environment}"
-  region = var.spaces_region
-  acl    = "private"
-
-  cors_rule {
-    allowed_headers = ["*"]
-    allowed_methods = ["GET", "PUT", "POST", "DELETE"]
-    allowed_origins = var.cors_allowed_origins
-    max_age_seconds = 3000
-  }
-
-  lifecycle_rule {
-    id      = "cleanup-old-logs"
-    enabled = true
-    prefix  = "logs/"
-
-    expiration {
-      days = 90
-    }
-  }
-
-  lifecycle_rule {
-    id      = "archive-old-reports"
-    enabled = true
-    prefix  = "reports/"
-
-    transition {
-      days          = 30
-      storage_class = "GLACIER"
-    }
-  }
-}
+# Commented out - requires Spaces credentials to be configured
+# resource "digitalocean_spaces_bucket" "main" {
+#   name   = "${var.project_name}-storage-${var.environment}"
+#   region = var.spaces_region
+#   acl    = "private"
+# }
 
 # =============================================================================
 # Container Registry
 # =============================================================================
 
 resource "digitalocean_container_registry" "main" {
-  name                   = "${var.project_name}-registry"
+  name                   = "${var.project_name}registry"
   subscription_tier_slug = var.registry_tier
-  region                 = var.region
+  # Note: Container registry is global, no region needed
 }
 
 # Connect registry to K8s cluster
@@ -253,38 +228,15 @@ resource "digitalocean_container_registry_docker_credentials" "main" {
 }
 
 # =============================================================================
-# Load Balancer (created by Kubernetes Ingress, but we define the firewall)
+# Load Balancer Firewall
+# Note: Firewall will be created after K8s ingress creates the load balancer
 # =============================================================================
 
-resource "digitalocean_firewall" "k8s_lb" {
-  name = "${var.project_name}-lb-fw-${var.environment}"
-
-  tags = ["${var.project_name}-lb"]
-
-  inbound_rule {
-    protocol         = "tcp"
-    port_range       = "80"
-    source_addresses = ["0.0.0.0/0", "::/0"]
-  }
-
-  inbound_rule {
-    protocol         = "tcp"
-    port_range       = "443"
-    source_addresses = ["0.0.0.0/0", "::/0"]
-  }
-
-  outbound_rule {
-    protocol              = "tcp"
-    port_range            = "1-65535"
-    destination_addresses = ["0.0.0.0/0", "::/0"]
-  }
-
-  outbound_rule {
-    protocol              = "udp"
-    port_range            = "1-65535"
-    destination_addresses = ["0.0.0.0/0", "::/0"]
-  }
-}
+# Commented out - will be configured after K8s deployment
+# resource "digitalocean_firewall" "k8s_lb" {
+#   name = "${var.project_name}-lb-fw-${var.environment}"
+#   droplet_ids = []
+# }
 
 # =============================================================================
 # Project Resource Grouping
@@ -300,6 +252,5 @@ resource "digitalocean_project" "main" {
     digitalocean_kubernetes_cluster.main.urn,
     digitalocean_database_cluster.postgres.urn,
     digitalocean_database_cluster.redis.urn,
-    digitalocean_spaces_bucket.main.urn,
   ]
 }

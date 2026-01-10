@@ -93,21 +93,17 @@ output "redis_connection_string" {
 }
 
 # =============================================================================
-# Storage Outputs
+# Storage Outputs (Spaces - requires separate credentials)
 # =============================================================================
 
-output "spaces_bucket_name" {
-  description = "Name of the Spaces bucket"
-  value       = digitalocean_spaces_bucket.main.name
-}
-
-output "spaces_bucket_domain" {
-  description = "Domain name of the Spaces bucket"
-  value       = digitalocean_spaces_bucket.main.bucket_domain_name
-}
+# Commented out - Spaces bucket not created without credentials
+# output "spaces_bucket_name" {
+#   description = "Name of the Spaces bucket"
+#   value       = digitalocean_spaces_bucket.main.name
+# }
 
 output "spaces_bucket_endpoint" {
-  description = "Endpoint for the Spaces bucket"
+  description = "Endpoint for the Spaces bucket (when created)"
   value       = "https://${var.spaces_region}.digitaloceanspaces.com"
 }
 

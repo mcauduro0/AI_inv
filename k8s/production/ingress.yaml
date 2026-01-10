@@ -1,0 +1,66 @@
+# =============================================================================
+# Investment Agent System - Kubernetes Ingress
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: investment-agent-ingress
+  namespace: investment-agent
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  rules:
+  # Frontend
+  - host: app.investment-agent.app
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 80
+  # API Gateway
+  - host: api.investment-agent.app
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - app.investment-agent.app
+    - api.investment-agent.app
+    secretName: investment-agent-tls
+
+---
+# =============================================================================
+# Load Balancer Service (for direct access without domain)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: investment-agent-lb
+  namespace: investment-agent
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-name: "investment-agent-lb"
+    service.beta.kubernetes.io/do-loadbalancer-size-slug: "lb-small"
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+spec:
+  type: LoadBalancer
+  selector:
+    app: api-gateway
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP

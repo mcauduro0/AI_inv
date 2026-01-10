@@ -21,10 +21,10 @@ k8s_node_count  = 3
 k8s_min_nodes   = 3
 k8s_max_nodes   = 10
 
-agent_node_size   = "s-4vcpu-8gb"
-agent_node_count  = 3
-agent_min_nodes   = 2
-agent_max_nodes   = 15
+agent_node_size   = "s-2vcpu-4gb"  # Reduced size to fit quota
+agent_node_count  = 2
+agent_min_nodes   = 1
+agent_max_nodes   = 3  # Reduced to fit 15 droplet limit
 
 # Database - production-grade with HA
 db_size       = "db-s-2vcpu-4gb"
