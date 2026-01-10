@@ -245,7 +245,7 @@ async def register(user_data: UserCreate):
 
 @app.post("/token", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login and get access token."""
+    """Login and get access token (OAuth2 form)."""
     async with get_session() as session:
         user_repo = UserRepository(session)
         user = await user_repo.get_by_email(form_data.username)
@@ -263,7 +263,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
                 detail="Inactive user"
             )
         
-        access_token = create_access_token(data={"sub": user.email})
+        access_token = create_access_token(data={"sub": user.email, "role": "user"})
         refresh_token = create_refresh_token(data={"sub": user.email})
         
         logger.info("User logged in", email=user.email)
@@ -271,6 +271,57 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         return Token(
             access_token=access_token,
             refresh_token=refresh_token
+        )
+
+
+class LoginRequest(BaseModel):
+    """JSON login request."""
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Login response with user info."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+@app.post("/login", response_model=LoginResponse)
+async def login_json(credentials: LoginRequest):
+    """Login with JSON body and get access token with user info."""
+    async with get_session() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.get_by_email(credentials.email)
+        
+        if not user or not verify_password(credentials.password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password"
+            )
+        
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive user"
+            )
+        
+        access_token = create_access_token(data={"sub": user.email, "role": "user", "user_id": str(user.id)})
+        refresh_token = create_refresh_token(data={"sub": user.email})
+        
+        logger.info("User logged in via JSON", email=user.email)
+        
+        return LoginResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserResponse(
+                id=str(user.id),
+                email=user.email,
+                full_name=user.full_name,
+                is_active=user.is_active,
+                created_at=user.created_at
+            )
         )
 
 
@@ -459,6 +510,36 @@ async def deactivate_user(
         return {"message": "User deactivated"}
 
 
+@app.post("/logout")
+async def logout(current_user: User = Depends(get_current_user)):
+    """Logout current user (invalidate token - client should discard)."""
+    logger.info("User logged out", email=current_user.email)
+    return {"message": "Logged out successfully"}
+
+
+@app.post("/validate")
+async def validate_token_endpoint(token: str):
+    """Validate a token (for internal service use)."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.auth.jwt_secret,
+            algorithms=[settings.auth.jwt_algorithm]
+        )
+        email = payload.get("sub")
+        if email is None:
+            return {"valid": False, "error": "Invalid token payload"}
+        
+        return {
+            "valid": True,
+            "email": email,
+            "role": payload.get("role", "user"),
+            "user_id": payload.get("user_id")
+        }
+    except JWTError as e:
+        return {"valid": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

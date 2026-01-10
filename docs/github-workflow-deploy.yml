@@ -1,0 +1,92 @@
+name: Build and Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: registry.digitalocean.com/investment-agentregistry
+  
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: api-gateway
+            context: services
+            dockerfile: services/api-gateway/Dockerfile
+          - name: auth-service
+            context: services
+            dockerfile: services/auth-service/Dockerfile
+          - name: master-control-agent
+            context: services
+            dockerfile: services/master-control-agent/Dockerfile
+          - name: workflow-engine
+            context: services
+            dockerfile: services/workflow-engine/Dockerfile
+          - name: idea-generation-agent
+            context: services
+            dockerfile: services/agents/idea-generation/Dockerfile
+          - name: due-diligence-agent
+            context: services
+            dockerfile: services/agents/due-diligence/Dockerfile
+          - name: frontend
+            context: frontend
+            dockerfile: frontend/Dockerfile
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.service.name }}:latest
+            ${{ env.REGISTRY }}/${{ matrix.service.name }}:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save investment-agent-cluster
+
+      - name: Update Kubernetes deployments
+        run: |
+          kubectl set image deployment/api-gateway api-gateway=${{ env.REGISTRY }}/api-gateway:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/auth-service auth-service=${{ env.REGISTRY }}/auth-service:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/master-control-agent master-control-agent=${{ env.REGISTRY }}/master-control-agent:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/workflow-engine workflow-engine=${{ env.REGISTRY }}/workflow-engine:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/idea-generation-agent idea-generation-agent=${{ env.REGISTRY }}/idea-generation-agent:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/due-diligence-agent due-diligence-agent=${{ env.REGISTRY }}/due-diligence-agent:${{ github.sha }} -n investment-agent
+          kubectl set image deployment/frontend frontend=${{ env.REGISTRY }}/frontend:${{ github.sha }} -n investment-agent
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/api-gateway -n investment-agent --timeout=300s
+          kubectl rollout status deployment/auth-service -n investment-agent --timeout=300s
+          kubectl rollout status deployment/frontend -n investment-agent --timeout=300s
+          kubectl get pods -n investment-agent
