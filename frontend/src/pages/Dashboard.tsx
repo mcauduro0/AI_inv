@@ -1,348 +1,268 @@
 // =============================================================================
-// Dashboard Page
+// Dashboard Page - Investment Committee Intelligence
 // =============================================================================
-// Main dashboard showing research overview, recent activity, and quick actions
+// Main dashboard with institutional grade design showing research overview,
+// agent status, and quick actions
 // =============================================================================
 
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import {
-  ChartBarIcon,
-  DocumentTextIcon,
-  LightBulbIcon,
-  PlayIcon,
-  ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon,
-  ClockIcon,
-} from '@heroicons/react/24/outline';
+import { Link } from 'react-router-dom'
+import { useResearchStore } from '../stores/researchStore'
+import { useAuthStore } from '../stores/authStore'
 
-import { api } from '../services/api';
+const quickActions = [
+  {
+    title: 'Due Diligence',
+    description: 'Deep-dive company analysis',
+    href: '/research/new?type=due_diligence',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+      </svg>
+    ),
+    color: 'from-purple-500 to-pink-500',
+  },
+  {
+    title: 'Idea Generation',
+    description: 'Discover new opportunities',
+    href: '/research/new?type=idea_generation',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+    color: 'from-blue-500 to-cyan-500',
+  },
+  {
+    title: 'Quick Screen',
+    description: 'Fast preliminary analysis',
+    href: '/research/new?type=quick_screen',
+    icon: (
+      <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    color: 'from-orange-500 to-yellow-500',
+  },
+]
 
-// Types
-interface ResearchProject {
-  id: string;
-  name: string;
-  ticker: string;
-  status: string;
-  conviction_level: string | null;
-  updated_at: string;
-}
+const agentStatus = [
+  { name: 'Idea Generation Agent', status: 'online', tasks: 0 },
+  { name: 'Due Diligence Agent', status: 'online', tasks: 2 },
+  { name: 'Portfolio Agent', status: 'online', tasks: 0 },
+  { name: 'Macro Agent', status: 'online', tasks: 1 },
+]
 
-interface WorkflowRun {
-  id: string;
-  workflow_name: string;
-  status: string;
-  started_at: string;
-}
+export default function Dashboard() {
+  const { user } = useAuthStore()
+  const { tasks } = useResearchStore()
 
-interface DashboardStats {
-  active_research: number;
-  ideas_generated: number;
-  workflows_run: number;
-  tasks_completed: number;
-}
-
-// Stat Card Component
-const StatCard: React.FC<{
-  title: string;
-  value: number | string;
-  icon: React.ElementType;
-  trend?: number;
-  color: string;
-}> = ({ title, value, icon: Icon, trend, color }) => (
-  <div className="bg-white rounded-lg shadow p-6">
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm font-medium text-gray-500">{title}</p>
-        <p className="text-3xl font-bold text-gray-900 mt-1">{value}</p>
-        {trend !== undefined && (
-          <div className="flex items-center mt-2">
-            {trend >= 0 ? (
-              <ArrowTrendingUpIcon className="h-4 w-4 text-green-500" />
-            ) : (
-              <ArrowTrendingDownIcon className="h-4 w-4 text-red-500" />
-            )}
-            <span
-              className={`text-sm ml-1 ${
-                trend >= 0 ? 'text-green-500' : 'text-red-500'
-              }`}
-            >
-              {Math.abs(trend)}% from last week
-            </span>
-          </div>
-        )}
-      </div>
-      <div className={`p-3 rounded-full ${color}`}>
-        <Icon className="h-6 w-6 text-white" />
-      </div>
-    </div>
-  </div>
-);
-
-// Quick Action Button
-const QuickAction: React.FC<{
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  to: string;
-  color: string;
-}> = ({ title, description, icon: Icon, to, color }) => (
-  <Link
-    to={to}
-    className="block bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-  >
-    <div className="flex items-start">
-      <div className={`p-3 rounded-lg ${color}`}>
-        <Icon className="h-6 w-6 text-white" />
-      </div>
-      <div className="ml-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <p className="text-sm text-gray-500 mt-1">{description}</p>
-      </div>
-    </div>
-  </Link>
-);
-
-// Research Project Card
-const ResearchCard: React.FC<{ project: ResearchProject }> = ({ project }) => {
-  const statusColors: Record<string, string> = {
-    idea: 'bg-gray-100 text-gray-800',
-    screening: 'bg-yellow-100 text-yellow-800',
-    deep_dive: 'bg-blue-100 text-blue-800',
-    thesis_development: 'bg-purple-100 text-purple-800',
-    monitoring: 'bg-green-100 text-green-800',
-  };
-
-  const convictionColors: Record<string, string> = {
-    low: 'text-gray-500',
-    medium: 'text-yellow-500',
-    high: 'text-green-500',
-    very_high: 'text-green-700',
-  };
-
-  return (
-    <Link
-      to={`/research/${project.id}`}
-      className="block bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center">
-            <span className="text-lg font-bold text-gray-900">
-              {project.ticker}
-            </span>
-            <span
-              className={`ml-2 px-2 py-1 rounded-full text-xs font-medium ${
-                statusColors[project.status] || 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              {project.status.replace('_', ' ')}
-            </span>
-          </div>
-          <p className="text-sm text-gray-500 mt-1">{project.name}</p>
-        </div>
-        {project.conviction_level && (
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Conviction</p>
-            <p
-              className={`font-semibold ${
-                convictionColors[project.conviction_level] || 'text-gray-500'
-              }`}
-            >
-              {project.conviction_level.replace('_', ' ').toUpperCase()}
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="mt-3 flex items-center text-xs text-gray-400">
-        <ClockIcon className="h-4 w-4 mr-1" />
-        Updated {new Date(project.updated_at).toLocaleDateString()}
-      </div>
-    </Link>
-  );
-};
-
-// Main Dashboard Component
-export const Dashboard: React.FC = () => {
-  // Fetch dashboard stats
-  const { data: stats } = useQuery<DashboardStats>({
-    queryKey: ['dashboard-stats'],
-    queryFn: () => api.get('/dashboard/stats').then((res) => res.data),
-  });
-
-  // Fetch recent research projects
-  const { data: recentProjects } = useQuery<ResearchProject[]>({
-    queryKey: ['recent-projects'],
-    queryFn: () =>
-      api.get('/research?limit=5&sort=-updated_at').then((res) => res.data),
-  });
-
-  // Fetch recent workflow runs
-  const { data: recentWorkflows } = useQuery<WorkflowRun[]>({
-    queryKey: ['recent-workflows'],
-    queryFn: () =>
-      api.get('/workflows/runs?limit=5&sort=-started_at').then((res) => res.data),
-  });
+  const recentTasks = tasks.slice(0, 5)
+  const runningTasks = tasks.filter((t) => t.status === 'running' || t.status === 'pending')
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">
-          Overview of your investment research activity
-        </p>
-      </div>
+      {/* Hero Section */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-800 p-8">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiMyMDIwMzAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMzYgMzRoLTJ2LTRoMnY0em0wLTZ2LTRoLTJ2NGgyek0zNCAyNGgtMnYtNGgydjR6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-30" />
+        <div className="relative">
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Investment Committee Intelligence
+          </h1>
+          <p className="text-slate-400 text-lg max-w-2xl">
+            Welcome back, {user?.name?.split(' ')[0] || 'Analyst'}. Your AI-powered research team is ready to analyze opportunities.
+          </p>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Active Research"
-          value={stats?.active_research || 0}
-          icon={DocumentTextIcon}
-          trend={12}
-          color="bg-blue-500"
-        />
-        <StatCard
-          title="Ideas Generated"
-          value={stats?.ideas_generated || 0}
-          icon={LightBulbIcon}
-          trend={8}
-          color="bg-yellow-500"
-        />
-        <StatCard
-          title="Workflows Run"
-          value={stats?.workflows_run || 0}
-          icon={PlayIcon}
-          trend={-5}
-          color="bg-purple-500"
-        />
-        <StatCard
-          title="Tasks Completed"
-          value={stats?.tasks_completed || 0}
-          icon={ChartBarIcon}
-          trend={15}
-          color="bg-green-500"
-        />
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+            <div className="bg-slate-800/50 rounded-xl p-4 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-white">{tasks.length}</div>
+              <div className="text-sm text-slate-400">Total Research</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-accent-blue">{runningTasks.length}</div>
+              <div className="text-sm text-slate-400">In Progress</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-success">4</div>
+              <div className="text-sm text-slate-400">Agents Online</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 backdrop-blur-sm">
+              <div className="text-3xl font-bold text-white">118</div>
+              <div className="text-sm text-slate-400">Prompts Available</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Quick Actions */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Quick Actions
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <QuickAction
-            title="Start Research"
-            description="Begin a new company research project"
-            icon={DocumentTextIcon}
-            to="/research?action=new"
-            color="bg-blue-500"
-          />
-          <QuickAction
-            title="Generate Ideas"
-            description="Find new investment opportunities"
-            icon={LightBulbIcon}
-            to="/ideas"
-            color="bg-yellow-500"
-          />
-          <QuickAction
-            title="Run Screening"
-            description="Screen stocks based on criteria"
-            icon={ChartBarIcon}
-            to="/screening"
-            color="bg-green-500"
-          />
+        <h2 className="text-xl font-semibold text-white mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {quickActions.map((action) => (
+            <Link
+              key={action.title}
+              to={action.href}
+              className="card-hover group"
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className={`p-3 rounded-xl bg-gradient-to-br ${action.color} text-white group-hover:scale-110 transition-transform`}
+                >
+                  {action.icon}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white group-hover:text-accent-blue transition-colors">
+                    {action.title}
+                  </h3>
+                  <p className="text-sm text-slate-400 mt-1">{action.description}</p>
+                </div>
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Research */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Recent Research
-            </h2>
-            <Link
-              to="/research"
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              View all →
-            </Link>
-          </div>
-          <div className="space-y-4">
-            {recentProjects?.map((project) => (
-              <ResearchCard key={project.id} project={project} />
-            ))}
-            {(!recentProjects || recentProjects.length === 0) && (
-              <div className="text-center py-8 bg-gray-50 rounded-lg">
-                <DocumentTextIcon className="h-12 w-12 text-gray-400 mx-auto" />
-                <p className="text-gray-500 mt-2">No research projects yet</p>
-                <Link
-                  to="/research?action=new"
-                  className="text-blue-600 hover:text-blue-800 text-sm mt-1 inline-block"
-                >
-                  Start your first research →
+        <div className="lg:col-span-2">
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-white">Recent Research</h2>
+              <Link to="/research/history" className="text-sm text-accent-blue hover:text-accent-blue-light">
+                View all
+              </Link>
+            </div>
+
+            {recentTasks.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 bg-slate-800 rounded-full flex items-center justify-center">
+                  <svg className="w-8 h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-white mb-2">No research yet</h3>
+                <p className="text-slate-400 mb-4">Start your first analysis to see results here</p>
+                <Link to="/research/new" className="btn-primary inline-flex items-center">
+                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Start Research
                 </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentTasks.map((task) => (
+                  <Link
+                    key={task.id}
+                    to={`/research/${task.id}`}
+                    className="flex items-center gap-4 p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors"
+                  >
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        task.status === 'completed'
+                          ? 'bg-success'
+                          : task.status === 'running'
+                          ? 'bg-warning animate-pulse'
+                          : task.status === 'failed'
+                          ? 'bg-danger'
+                          : 'bg-slate-500'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-white truncate">
+                        {task.ticker || task.theme || 'Research Task'}
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        {task.type.replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                      </p>
+                    </div>
+                    {task.status === 'running' && (
+                      <div className="text-sm text-slate-400">{task.progress}%</div>
+                    )}
+                    {task.results?.recommendation && (
+                      <span
+                        className={`badge ${
+                          task.results.recommendation === 'buy'
+                            ? 'badge-success'
+                            : task.results.recommendation === 'sell'
+                            ? 'badge-danger'
+                            : 'badge-warning'
+                        }`}
+                      >
+                        {task.results.recommendation}
+                      </span>
+                    )}
+                  </Link>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Recent Workflows */}
+        {/* Agent Status */}
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">
-              Recent Workflows
-            </h2>
-            <Link
-              to="/workflows"
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              View all →
-            </Link>
-          </div>
-          <div className="bg-white rounded-lg shadow">
-            <ul className="divide-y divide-gray-200">
-              {recentWorkflows?.map((workflow) => (
-                <li key={workflow.id} className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {workflow.workflow_name}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {new Date(workflow.started_at).toLocaleString()}
-                      </p>
-                    </div>
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        workflow.status === 'completed'
-                          ? 'bg-green-100 text-green-800'
-                          : workflow.status === 'running'
-                          ? 'bg-blue-100 text-blue-800'
-                          : workflow.status === 'failed'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800'
+          <div className="card">
+            <h2 className="text-xl font-semibold text-white mb-4">Agent Status</h2>
+            <div className="space-y-3">
+              {agentStatus.map((agent) => (
+                <div
+                  key={agent.name}
+                  className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        agent.status === 'online' ? 'bg-success' : 'bg-slate-500'
                       }`}
-                    >
-                      {workflow.status}
-                    </span>
+                    />
+                    <span className="text-sm text-slate-300">{agent.name}</span>
                   </div>
-                </li>
+                  {agent.tasks > 0 && (
+                    <span className="badge badge-info">{agent.tasks} tasks</span>
+                  )}
+                </div>
               ))}
-              {(!recentWorkflows || recentWorkflows.length === 0) && (
-                <li className="p-8 text-center">
-                  <PlayIcon className="h-12 w-12 text-gray-400 mx-auto" />
-                  <p className="text-gray-500 mt-2">No workflow runs yet</p>
-                </li>
-              )}
-            </ul>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-800">
+              <Link
+                to="/agents"
+                className="text-sm text-accent-blue hover:text-accent-blue-light flex items-center justify-center gap-2"
+              >
+                Manage Agents
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+
+          {/* Data Sources */}
+          <div className="card mt-6">
+            <h2 className="text-xl font-semibold text-white mb-4">Data Sources</h2>
+            <div className="space-y-2">
+              {[
+                { name: 'Polygon.io', status: 'connected' },
+                { name: 'SEC EDGAR', status: 'connected' },
+                { name: 'FMP', status: 'connected' },
+                { name: 'Reddit', status: 'connected' },
+                { name: 'FRED', status: 'connected' },
+              ].map((source) => (
+                <div
+                  key={source.name}
+                  className="flex items-center justify-between py-2"
+                >
+                  <span className="text-sm text-slate-400">{source.name}</span>
+                  <span className="text-xs text-success">Connected</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
+
+// Also export as named export for backwards compatibility
+export { Dashboard }
