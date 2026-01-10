@@ -1,10 +1,15 @@
 # =============================================================================
 # Development Environment Configuration
 # =============================================================================
+# NOTE: The do_token variable should be set via environment variable:
+# export TF_VAR_do_token="your-digitalocean-token"
+# Or passed via command line:
+# terraform apply -var="do_token=your-token"
+# =============================================================================
 
 environment  = "dev"
 project_name = "investment-agent"
-region       = "nyc3"
+region       = "nyc1"
 spaces_region = "nyc3"
 
 # VPC
