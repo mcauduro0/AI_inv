@@ -1,0 +1,40 @@
+# =============================================================================
+# Production Environment Configuration
+# =============================================================================
+
+environment  = "prod"
+project_name = "investment-agent"
+region       = "nyc3"
+spaces_region = "nyc3"
+
+# VPC
+vpc_ip_range = "10.20.0.0/16"
+
+# Kubernetes - production-grade sizing
+k8s_node_size   = "s-4vcpu-8gb"
+k8s_node_count  = 3
+k8s_min_nodes   = 3
+k8s_max_nodes   = 10
+
+agent_node_size   = "s-4vcpu-8gb"
+agent_node_count  = 3
+agent_min_nodes   = 2
+agent_max_nodes   = 15
+
+# Database - production-grade with HA
+db_size       = "db-s-2vcpu-4gb"
+db_node_count = 2  # Primary + standby for HA
+
+redis_size       = "db-s-2vcpu-4gb"
+redis_node_count = 2  # Primary + replica for HA
+
+# Storage
+registry_tier = "professional"
+cors_allowed_origins = ["https://app.yourdomain.com"]
+
+# Monitoring
+enable_monitoring = true
+enable_logging    = true
+
+# Domain (set your actual domain)
+app_domain = "app.yourdomain.com"

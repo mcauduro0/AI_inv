@@ -1,0 +1,72 @@
+# =============================================================================
+# Base Dockerfile for Python Services
+# =============================================================================
+# This base image contains all shared dependencies for the investment system
+# =============================================================================
+
+FROM python:3.11-slim-bookworm AS base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy shared requirements first for better caching
+COPY services/shared/requirements.txt /app/shared-requirements.txt
+RUN pip install --no-cache-dir -r /app/shared-requirements.txt
+
+# Copy shared library
+COPY services/shared /app/shared
+
+# Set Python path to include shared library
+ENV PYTHONPATH="/app:/app/shared:${PYTHONPATH}"
+
+# =============================================================================
+# Development Stage
+# =============================================================================
+FROM base AS development
+
+# Install development dependencies
+RUN pip install --no-cache-dir \
+    pytest \
+    pytest-asyncio \
+    pytest-cov \
+    black \
+    flake8 \
+    mypy \
+    ipython
+
+# Keep container running for development
+CMD ["tail", "-f", "/dev/null"]
+
+# =============================================================================
+# Production Stage
+# =============================================================================
+FROM base AS production
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Default command (override in service-specific Dockerfiles)
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
