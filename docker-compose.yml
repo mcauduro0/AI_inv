@@ -1,7 +1,10 @@
 # =============================================================================
 # Investment Agent System - Docker Compose for Local Development
 # =============================================================================
-# Run with: docker-compose up --build
+# Run: docker-compose up -d
+# Stop: docker-compose down
+# Logs: docker-compose logs -f [service]
+# With monitoring: docker-compose --profile monitoring up -d
 # =============================================================================
 
 version: '3.9'
@@ -15,16 +18,16 @@ services:
     image: postgres:16-alpine
     container_name: investment-postgres
     environment:
-      POSTGRES_USER: investment_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
-      POSTGRES_DB: investment_system
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres123}
+      POSTGRES_DB: ${DATABASE_NAME:-investment_agents}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql:/docker-entrypoint-initdb.d
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U investment_user -d investment_system"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-investment_agents}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,114 +50,55 @@ services:
     networks:
       - investment-network
 
-  # ===========================================================================
-  # Core Application Services
-  # ===========================================================================
-
-  auth-service:
-    build:
-      context: .
-      dockerfile: services/auth-service/Dockerfile
-    container_name: investment-auth
-    environment:
-      - DATABASE_URL=postgresql://investment_user:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/investment_system
-      - REDIS_URL=redis://redis:6379/0
-      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-change-in-production}
-      - JWT_ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: investment-qdrant
     ports:
-      - "8001:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - investment-network
-    restart: unless-stopped
 
-  master-control-agent:
-    build:
-      context: .
-      dockerfile: services/master-control-agent/Dockerfile
-    container_name: investment-mca
+  minio:
+    image: minio/minio:latest
+    container_name: investment-minio
+    command: server /data --console-address ":9001"
     environment:
-      - DATABASE_URL=postgresql://investment_user:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/investment_system
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
-      - FMP_API_KEY=${FMP_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin123}
     ports:
-      - "8002:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
     networks:
       - investment-network
-    restart: unless-stopped
 
   # ===========================================================================
-  # Specialized Agent Services
-  # ===========================================================================
-
-  business-analysis-agent:
-    build:
-      context: .
-      dockerfile: services/agents/business-analysis/Dockerfile
-    container_name: investment-business-agent
-    environment:
-      - DATABASE_URL=postgresql://investment_user:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/investment_system
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
-      - FMP_API_KEY=${FMP_API_KEY}
-    depends_on:
-      - redis
-      - master-control-agent
-    networks:
-      - investment-network
-    restart: unless-stopped
-    deploy:
-      replicas: 2
-
-  due-diligence-agent:
-    build:
-      context: .
-      dockerfile: services/agents/due-diligence/Dockerfile
-    container_name: investment-dd-agent
-    environment:
-      - DATABASE_URL=postgresql://investment_user:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/investment_system
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - POLYGON_API_KEY=${POLYGON_API_KEY}
-      - FMP_API_KEY=${FMP_API_KEY}
-    depends_on:
-      - redis
-      - master-control-agent
-    networks:
-      - investment-network
-    restart: unless-stopped
-    deploy:
-      replicas: 2
-
-  # ===========================================================================
-  # Workflow Engine
+  # Workflow Engine (Prefect)
   # ===========================================================================
 
   prefect-server:
     image: prefecthq/prefect:2-python3.11
     container_name: investment-prefect-server
-    command: prefect server start
+    command: prefect server start --host 0.0.0.0
     environment:
       - PREFECT_SERVER_API_HOST=0.0.0.0
-      - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://investment_user:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/investment_system
+      - PREFECT_API_DATABASE_CONNECTION_URL=postgresql+asyncpg://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/prefect
     ports:
       - "4200:4200"
     depends_on:
@@ -177,24 +121,144 @@ services:
     restart: unless-stopped
 
   # ===========================================================================
-  # API Gateway (Traefik)
+  # Core Application Services
   # ===========================================================================
 
-  traefik:
-    image: traefik:v3.0
-    container_name: investment-gateway
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: investment-auth
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-change-in-production-abc123xyz789}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
     ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"  # Traefik dashboard
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: investment-api-gateway
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - MCA_SERVICE_URL=http://master-control-agent:8000
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret-change-in-production-abc123xyz789}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+      - master-control-agent
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  master-control-agent:
+    build:
+      context: .
+      dockerfile: services/master-control-agent/Dockerfile
+    container_name: investment-mca
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SONAR_API_KEY=${SONAR_API_KEY}
+      - DEFAULT_LLM_PROVIDER=${DEFAULT_LLM_PROVIDER:-openai}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - FMP_API_KEY=${FMP_API_KEY}
+      - PREFECT_API_URL=http://prefect-server:4200/api
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      - investment-network
+    restart: unless-stopped
+
+  # ===========================================================================
+  # Specialized Agent Services
+  # ===========================================================================
+
+  idea-generation-agent:
+    build:
+      context: .
+      dockerfile: services/agents/idea-generation/Dockerfile
+    container_name: investment-idea-agent
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SONAR_API_KEY=${SONAR_API_KEY}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - FMP_API_KEY=${FMP_API_KEY}
+      - SEC_USER_AGENT=${SEC_USER_AGENT:-InvestmentAgentSystem contact@example.com}
+    depends_on:
+      - master-control-agent
+    networks:
+      - investment-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  due-diligence-agent:
+    build:
+      context: .
+      dockerfile: services/agents/due-diligence/Dockerfile
+    container_name: investment-dd-agent
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - FMP_API_KEY=${FMP_API_KEY}
+      - SEC_USER_AGENT=${SEC_USER_AGENT:-InvestmentAgentSystem contact@example.com}
+    depends_on:
+      - master-control-agent
+    networks:
+      - investment-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  workflow-engine:
+    build:
+      context: .
+      dockerfile: services/workflow-engine/Dockerfile
+    container_name: investment-workflow
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres123}@postgres:5432/${DATABASE_NAME:-investment_agents}
+      - REDIS_URL=redis://redis:6379/0
+      - PREFECT_API_URL=http://prefect-server:4200/api
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    depends_on:
+      - prefect-server
+      - master-control-agent
     networks:
       - investment-network
     restart: unless-stopped
@@ -205,34 +269,33 @@ services:
 
   frontend:
     build:
-      context: ./services/frontend
+      context: ./frontend
       dockerfile: Dockerfile
     container_name: investment-frontend
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:80
+      - VITE_API_URL=http://localhost:8000/api
+      - VITE_WS_URL=ws://localhost:8000/ws
     ports:
       - "3000:3000"
     depends_on:
-      - auth-service
-      - master-control-agent
+      - api-gateway
     networks:
       - investment-network
     restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`localhost`)"
-      - "traefik.http.routers.frontend.entrypoints=web"
-      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
 
   # ===========================================================================
-  # Monitoring (Optional for local dev)
+  # Monitoring Stack (Optional - use --profile monitoring)
   # ===========================================================================
 
   prometheus:
     image: prom/prometheus:v2.48.0
     container_name: investment-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
     volumes:
-      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
@@ -245,10 +308,12 @@ services:
     image: grafana/grafana:10.2.3
     container_name: investment-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin123}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
       - "3001:3000"
     depends_on:
@@ -273,5 +338,7 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:
+  minio_data:
   prometheus_data:
   grafana_data:

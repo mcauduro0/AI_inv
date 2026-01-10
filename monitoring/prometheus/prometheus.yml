@@ -1,0 +1,76 @@
+# =============================================================================
+# Prometheus Configuration for Investment Agent System
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'investment-agent-system'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Rule files
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Auth Service
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:8000']
+    metrics_path: '/metrics'
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8000']
+    metrics_path: '/metrics'
+
+  # Master Control Agent
+  - job_name: 'master-control-agent'
+    static_configs:
+      - targets: ['master-control-agent:8000']
+    metrics_path: '/metrics'
+
+  # Idea Generation Agent
+  - job_name: 'idea-generation-agent'
+    static_configs:
+      - targets: ['idea-generation-agent:8000']
+    metrics_path: '/metrics'
+
+  # Due Diligence Agent
+  - job_name: 'due-diligence-agent'
+    static_configs:
+      - targets: ['due-diligence-agent:8000']
+    metrics_path: '/metrics'
+
+  # Workflow Engine
+  - job_name: 'workflow-engine'
+    static_configs:
+      - targets: ['workflow-engine:8000']
+    metrics_path: '/metrics'
+
+  # PostgreSQL Exporter (if added)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Redis Exporter (if added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+  # Node Exporter (for host metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
