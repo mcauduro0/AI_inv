@@ -13,17 +13,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy shared requirements and install
-COPY services/shared/requirements.txt /tmp/requirements.txt
+COPY shared/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Install Prefect
 RUN pip install --no-cache-dir prefect>=2.0
 
 # Copy shared modules
-COPY services/shared /app/shared
+COPY shared /app/shared
 
 # Copy service code
-COPY services/workflow-engine /app/workflow-engine
+COPY workflow-engine /app/workflow-engine
 
 # Set Python path
 ENV PYTHONPATH=/app
