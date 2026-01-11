@@ -245,7 +245,15 @@ class DataService:
         """Get company details from Polygon."""
         try:
             details = await self.polygon.get_ticker_details(ticker)
-            return asdict(details) if details else {}
+            # Handle Pydantic model or dataclass
+            if details:
+                if hasattr(details, 'model_dump'):
+                    return details.model_dump()
+                elif hasattr(details, 'dict'):
+                    return details.dict()
+                elif hasattr(details, '__dict__'):
+                    return details.__dict__
+            return {}
         except Exception as e:
             self.logger.warning("Polygon details failed", ticker=ticker, error=str(e))
             return {}

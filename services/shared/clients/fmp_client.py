@@ -647,6 +647,93 @@ class FMPClient:
         return data
 
 
+    # =========================================================================
+    # Key Metrics
+    # =========================================================================
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    async def get_key_metrics(
+        self,
+        symbol: str,
+        period: str = "quarter",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Get key financial metrics.
+        
+        Args:
+            symbol: Stock ticker symbol
+            period: "quarter" or "annual" or "ttm"
+            limit: Number of periods to return
+            
+        Returns:
+            List of key metrics dictionaries
+        """
+        if period == "ttm":
+            data = await self._request(f"key-metrics-ttm/{symbol}")
+        else:
+            data = await self._request(
+                f"key-metrics/{symbol}",
+                params={"period": period, "limit": limit}
+            )
+        
+        # Return as list of dict-like objects with __dict__
+        class MetricsDict(dict):
+            def __init__(self, d):
+                super().__init__(d)
+                self.__dict__.update(d)
+        
+        if isinstance(data, list):
+            return [MetricsDict(item) for item in data]
+        elif isinstance(data, dict):
+            return [MetricsDict(data)]
+        return []
+    
+    # =========================================================================
+    # Stock Quote
+    # =========================================================================
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
+    async def get_quote(self, symbol: str):
+        """
+        Get real-time stock quote.
+        
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            Quote object with price data
+        """
+        data = await self._request(f"quote/{symbol}")
+        
+        if not data:
+            return None
+        
+        quote = data[0] if isinstance(data, list) else data
+        
+        class Quote:
+            def __init__(self, d):
+                self.symbol = d.get("symbol")
+                self.name = d.get("name")
+                self.price = d.get("price", 0)
+                self.change = d.get("change", 0)
+                self.change_percentage = d.get("changesPercentage", 0)
+                self.day_low = d.get("dayLow", 0)
+                self.day_high = d.get("dayHigh", 0)
+                self.year_low = d.get("yearLow", 0)
+                self.year_high = d.get("yearHigh", 0)
+                self.market_cap = d.get("marketCap", 0)
+                self.pe = d.get("pe", 0)
+                self.eps = d.get("eps", 0)
+                self.volume = d.get("volume", 0)
+                self.avg_volume = d.get("avgVolume", 0)
+                self.open = d.get("open", 0)
+                self.previous_close = d.get("previousClose", 0)
+                self.ytd = d.get("priceAvg200", 0)  # Use 200-day avg as proxy
+        
+        return Quote(quote)
+
+
 @lru_cache()
 def get_fmp_client() -> FMPClient:
     """Get a cached FMP client instance."""
