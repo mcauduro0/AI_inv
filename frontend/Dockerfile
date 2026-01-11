@@ -16,22 +16,24 @@ RUN npm ci || npm install
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application with relative API URL
+ENV VITE_API_URL=/api
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine AS runner
+# Production stage with nginx
+FROM nginx:alpine AS runner
 
-WORKDIR /app
+# Remove default nginx config
+RUN rm /etc/nginx/conf.d/default.conf
 
-# Install serve for static file serving
-RUN npm install -g serve
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built files
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Expose port
-EXPOSE 3000
+EXPOSE 80
 
-# Run the application
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# Run nginx
+CMD ["nginx", "-g", "daemon off;"]
