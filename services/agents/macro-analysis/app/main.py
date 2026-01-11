@@ -245,7 +245,15 @@ async def generate_ideas(request: IdeaGenerationRequest):
     start_time = datetime.utcnow()
     
     try:
-        result = await agent.execute({
+        # Create proper AgentTask object
+        from shared.agents.base import AgentTask
+        task = AgentTask(
+            agent_type="agent",
+            prompt_name=request.strategy,
+            input_data=request.parameters
+        )
+        result = await agent.execute(task)
+        # OLD: result = await agent.execute({
             "strategy": request.strategy,
             "parameters": request.parameters
         })
@@ -326,7 +334,15 @@ async def _execute_async_task(
             await redis_client.hset(f"task:{task_id}", "status", "running")
         
         # Execute
-        result = await agent.execute({
+        # Create proper AgentTask object
+        from shared.agents.base import AgentTask
+        task = AgentTask(
+            agent_type="agent",
+            prompt_name=request.strategy,
+            input_data=request.parameters
+        )
+        result = await agent.execute(task)
+        # OLD: result = await agent.execute({
             "strategy": strategy,
             "parameters": parameters
         })

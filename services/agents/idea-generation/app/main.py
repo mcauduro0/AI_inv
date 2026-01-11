@@ -245,10 +245,14 @@ async def generate_ideas(request: IdeaGenerationRequest):
     start_time = datetime.utcnow()
     
     try:
-        result = await agent.execute({
-            "strategy": request.strategy,
-            "parameters": request.parameters
-        })
+        # Create proper AgentTask object
+        from shared.agents.base import AgentTask
+        task = AgentTask(
+            agent_type="idea_generation",
+            prompt_name=request.strategy,
+            input_data=request.parameters
+        )
+        result = await agent.execute(task)
         
         execution_time = (datetime.utcnow() - start_time).total_seconds()
         
