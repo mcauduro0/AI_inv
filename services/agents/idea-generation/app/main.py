@@ -13,7 +13,9 @@ from pydantic import BaseModel, Field
 import structlog
 import redis.asyncio as redis
 
-from agent import IdeaGenerationAgent
+import sys
+sys.path.insert(0, '/app/idea-generation')
+from app.agent import IdeaGenerationAgent
 
 logger = structlog.get_logger(__name__)
 

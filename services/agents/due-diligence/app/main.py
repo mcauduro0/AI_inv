@@ -13,7 +13,9 @@ from pydantic import BaseModel, Field
 import structlog
 import redis.asyncio as redis
 
-from agent import DueDiligenceAgent
+import sys
+sys.path.insert(0, '/app/due-diligence')
+from app.agent import DueDiligenceAgent
 
 logger = structlog.get_logger(__name__)
 
