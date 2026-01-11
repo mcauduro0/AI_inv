@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Investment Agent System is now fully deployed and operational on DigitalOcean Kubernetes.
+The Investment Agent System is now fully deployed and operational on DigitalOcean Kubernetes with 10 specialized AI agents.
 
 ## Access URLs
 
@@ -31,6 +31,10 @@ The Investment Agent System is now fully deployed and operational on DigitalOcea
 | Workflow Engine | 1 | Running | 8003 |
 | Idea Generation Agent | 2 | Running | 8010 |
 | Due Diligence Agent | 2 | Running | 8011 |
+| Portfolio Management Agent | 1 | Running | 8012 |
+| Macro Analysis Agent | 1 | Running | 8013 |
+| Risk Analysis Agent | 1 | Running | 8014 |
+| Sentiment Analysis Agent | 1 | Running | 8015 |
 | Frontend | 2 | Running | 3000 |
 
 ### Database
@@ -44,20 +48,30 @@ The Investment Agent System is now fully deployed and operational on DigitalOcea
 
 ## Prompt Library
 
-10 investment prompts have been seeded across categories:
-- Idea Generation (3 prompts)
-- Due Diligence (3 prompts)
-- Portfolio Management (1 prompt)
-- Market Analysis (1 prompt)
-- Research Synthesis (1 prompt)
-- Monitoring (1 prompt)
+44 investment prompts have been seeded across 7 categories:
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| Idea Generation | 10 | Thematic screening, 13F analysis, insider signals, trend mapping |
+| Due Diligence | 10 | Financial analysis, competitive moats, DCF modeling, risk assessment |
+| Portfolio Management | 5 | Risk analysis, position sizing, rebalancing, factor exposure |
+| Market Analysis | 5 | Regime classification, earnings analysis, Fed policy, sector momentum |
+| Research Synthesis | 5 | Thesis building, bull/bear cases, research notes, earnings previews |
+| Monitoring | 4 | Thesis tracking, news sentiment, price alerts, performance reporting |
+| Special Situations | 5 | Merger arb, activist situations, distressed debt, IPOs, spinoffs |
+
+## User Accounts
+
+A test admin account has been created:
+- **Email:** admin@investmentagent.com
+- **Password:** InvestAgent2026!
 
 ## Next Steps
 
-1. **Create User Accounts:** Use the "Create one" link on the login page
-2. **Configure OAuth:** Set up Google/GitHub OAuth for social login
-3. **Add More Prompts:** Run the seed script with DATABASE_URL environment variable
-4. **Set Up Domain:** Configure DNS for custom domain with SSL
+1. **Configure OAuth:** Set up Google/GitHub OAuth for social login
+2. **Set Up Domain:** Configure DNS for custom domain with SSL
+3. **Add More Prompts:** Use `scripts/seed_all_prompts.py` to add additional prompts
+4. **Monitor Performance:** Set up Prometheus/Grafana for metrics
 
 ## Maintenance
 
@@ -76,9 +90,15 @@ kubectl rollout restart deployment -n investment-agent
 kubectl scale deployment <service-name> --replicas=<count> -n investment-agent
 ```
 
+### Seed Prompts
+```bash
+kubectl cp scripts/seed_all_prompts.py investment-agent/<auth-pod>:/tmp/
+kubectl exec -n investment-agent <auth-pod> -- python3 /tmp/seed_all_prompts.py
+```
+
 ## Repository
 
 GitHub: https://github.com/mcauduro0/AI_inv
 
 ---
-*Last Updated: January 10, 2026*
+*Last Updated: January 11, 2026*
