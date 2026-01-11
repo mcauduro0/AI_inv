@@ -29,11 +29,11 @@ RUN groupadd --gid 1000 appgroup && \
 WORKDIR /app
 
 # Copy shared requirements first for better caching
-COPY services/shared/requirements.txt /app/shared-requirements.txt
+COPY requirements.txt /app/shared-requirements.txt
 RUN pip install --no-cache-dir -r /app/shared-requirements.txt
 
 # Copy shared library
-COPY services/shared /app/shared
+COPY . /app/shared
 
 # Set Python path to include shared library
 ENV PYTHONPATH="/app:/app/shared:${PYTHONPATH}"
