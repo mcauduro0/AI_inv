@@ -138,7 +138,7 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint."""
     uptime = (datetime.utcnow() - startup_time).total_seconds()
-    prompts_loaded = len(agent.prompts) if agent else 0
+    prompts_loaded = len(agent.get_supported_prompts()) if agent else 0
     
     return HealthResponse(
         status="healthy" if agent else "initializing",
@@ -396,7 +396,7 @@ async def get_prompts():
         raise HTTPException(status_code=503, detail="Agent not initialized")
     
     return {
-        "count": len(agent.prompts),
+        "count": len(agent.get_supported_prompts()),
         "prompts": [
             {
                 "id": p.id,
