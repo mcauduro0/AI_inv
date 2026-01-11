@@ -691,7 +691,7 @@ async def list_prompts(
         if category:
             prompts = await repo.get_by_category(category)
         else:
-            prompts = await repo.list(limit=limit, offset=offset)
+            prompts = await repo.get_all(skip=offset, limit=limit)
         
         # Filter by search if provided
         if search:
