@@ -12,25 +12,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy shared requirements and install
-COPY services/shared/requirements.txt /tmp/requirements.txt
+# Copy shared requirements and install (from agents/ context)
+COPY ../shared/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy shared modules
-COPY services/shared /app/shared
+COPY ../shared /app/shared
 
 # Copy agent code
-COPY services/agents/idea-generation /app/agents/idea-generation
+COPY idea-generation /app/idea-generation
 
 # Set Python path
 ENV PYTHONPATH=/app
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8003
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8003/health || exit 1
 
 # Run the agent
-CMD ["python", "-m", "agents.idea-generation.app.agent"]
+CMD ["uvicorn", "idea-generation.app.main:app", "--host", "0.0.0.0", "--port", "8003"]

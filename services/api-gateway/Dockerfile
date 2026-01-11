@@ -12,14 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy shared requirements and install
-COPY services/shared/requirements.txt /tmp/requirements.txt
+COPY shared/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy shared modules
-COPY services/shared /app/shared
+COPY shared /app/shared
 
 # Copy service code
-COPY services/api-gateway /app/api-gateway
+COPY api-gateway /app/api-gateway
 
 # Set Python path
 ENV PYTHONPATH=/app
