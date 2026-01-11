@@ -97,7 +97,6 @@ async def lifespan(app: FastAPI):
     
     # Initialize agent
     agent = IdeaGenerationAgent()
-    await agent.initialize()
     logger.info("Idea Generation Agent initialized")
     
     yield

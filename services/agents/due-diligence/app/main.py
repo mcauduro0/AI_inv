@@ -107,7 +107,6 @@ async def lifespan(app: FastAPI):
     
     # Initialize agent
     agent = DueDiligenceAgent()
-    await agent.initialize()
     logger.info("Due Diligence Agent initialized")
     
     yield
