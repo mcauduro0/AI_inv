@@ -1,7 +1,7 @@
 # =============================================================================
-# Investment Idea Generation Agent
+# Portfolio Management Agent
 # =============================================================================
-# Specialized agent for generating investment ideas from various sources
+# Specialized agent for portfolio analysis, optimization, and risk management
 # =============================================================================
 
 import asyncio
@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 import structlog
+import json
 
 import sys
 sys.path.insert(0, "/app")
@@ -18,140 +19,72 @@ from shared.agents.base import BaseAgent, AgentTask, AgentResult, TaskPriority
 from shared.llm.provider import get_llm_provider
 from shared.clients.polygon_client import get_polygon_client
 from shared.clients.fmp_client import get_fmp_client
-from shared.clients.sec_client import get_sec_client
-from shared.clients.redis_client import get_redis_client
+from shared.clients.data_service import get_data_service
 
 logger = structlog.get_logger(__name__)
 
 
 # =============================================================================
-# Output Models
-# =============================================================================
-
-class InvestmentIdea(BaseModel):
-    """A generated investment idea."""
-    ticker: str
-    company_name: str
-    sector: str
-    industry: str
-    thesis_summary: str
-    key_drivers: List[str]
-    catalysts: List[str]
-    risks: List[str]
-    source: str
-    confidence_score: float = Field(ge=0, le=1)
-    time_horizon: str  # short, medium, long
-    idea_type: str  # long, short, pair_trade
-
-
-class ThematicAnalysis(BaseModel):
-    """Analysis of a thematic investment opportunity."""
-    theme: str
-    description: str
-    market_size: Optional[str] = None
-    growth_rate: Optional[str] = None
-    key_trends: List[str]
-    first_order_effects: List[str]
-    second_order_effects: List[str]
-    third_order_effects: List[str]
-    pure_play_candidates: List[Dict[str, Any]]
-    diversified_exposure: List[Dict[str, Any]]
-
-
-class InstitutionalCluster(BaseModel):
-    """Institutional clustering analysis result."""
-    ticker: str
-    company_name: str
-    top_holders: List[Dict[str, Any]]
-    recent_activity: str  # accumulating, reducing, stable
-    concentration_score: float
-    smart_money_signal: str
-
-
-class ScreeningResult(BaseModel):
-    """Stock screening result."""
-    ticker: str
-    company_name: str
-    sector: str
-    scores: Dict[str, float]
-    overall_score: float
-    key_metrics: Dict[str, Any]
-    recommendation: str
-
-
-# =============================================================================
-# Idea Generation Agent
+# Portfolio Management Agent
 # =============================================================================
 
 class PortfolioManagementAgent(BaseAgent):
     """
-    Agent specialized in generating investment ideas.
+    Agent specialized in portfolio analysis and optimization.
     
     Capabilities:
-    - Thematic idea generation
-    - Newsletter and publication scanning
-    - SEC 13F institutional clustering analysis
-    - Insider trading pattern detection
-    - Social sentiment analysis
-    - Pure-play identification
+    - Portfolio risk analysis
+    - Position sizing recommendations
+    - Correlation analysis
+    - Rebalancing suggestions
+    - Sector/factor exposure analysis
     """
     
     SUPPORTED_PROMPTS = [
-        "thematic_candidate_screen",
-        "newsletter_idea_scraping",
-        "niche_publication_scanner",
-        "institutional_clustering_13f",
-        "insider_trading_analysis",
-        "theme_order_effects",
-        "pure_play_filter",
-        "deep_web_trend_scanner",
-        "social_sentiment_scan",
-        "contrarian_opportunities",
-        "sector_thesis_stress_test"
+        "portfolio_risk_analysis",
+        "position_sizing",
+        "correlation_analysis",
+        "rebalancing_recommendation",
+        "sector_exposure",
+        "factor_exposure",
+        "drawdown_analysis",
+        "portfolio_optimization"
     ]
     
     def __init__(self):
-        super().__init__(agent_type="idea_generation_agent")
+        super().__init__(agent_type="portfolio_management_agent")
         self.polygon = get_polygon_client()
         self.fmp = get_fmp_client()
-        self.sec = get_sec_client()
+        self.data_service = get_data_service()
     
     def get_supported_prompts(self) -> List[str]:
         return self.SUPPORTED_PROMPTS
     
     async def execute(self, task: AgentTask) -> AgentResult:
-        """Execute an idea generation task."""
+        """Execute a portfolio management task."""
         start_time = datetime.utcnow()
         
         prompt_name = task.prompt_name
         input_data = task.input_data
         
         self.logger.info(
-            "Executing idea generation task",
-            prompt_name=prompt_name,
-            input_data=input_data
+            "Executing portfolio management task",
+            prompt_name=prompt_name
         )
         
         try:
-            # Route to appropriate handler
-            if prompt_name == "thematic_candidate_screen":
-                result = await self._thematic_candidate_screen(input_data)
-            elif prompt_name == "theme_order_effects":
-                result = await self._theme_order_effects(input_data)
-            elif prompt_name == "institutional_clustering_13f":
-                result = await self._institutional_clustering(input_data)
-            elif prompt_name == "insider_trading_analysis":
-                result = await self._insider_trading_analysis(input_data)
-            elif prompt_name == "pure_play_filter":
-                result = await self._pure_play_filter(input_data)
-            elif prompt_name == "newsletter_idea_scraping":
-                result = await self._newsletter_scanning(input_data)
-            elif prompt_name == "social_sentiment_scan":
-                result = await self._social_sentiment_scan(input_data)
-            elif prompt_name == "contrarian_opportunities":
-                result = await self._contrarian_opportunities(input_data)
+            if prompt_name == "portfolio_risk_analysis":
+                result = await self._portfolio_risk_analysis(input_data)
+            elif prompt_name == "position_sizing":
+                result = await self._position_sizing(input_data)
+            elif prompt_name == "correlation_analysis":
+                result = await self._correlation_analysis(input_data)
+            elif prompt_name == "rebalancing_recommendation":
+                result = await self._rebalancing_recommendation(input_data)
+            elif prompt_name == "sector_exposure":
+                result = await self._sector_exposure(input_data)
             else:
-                raise ValueError(f"Unsupported prompt: {prompt_name}")
+                result = await self._generic_portfolio_analysis(prompt_name, input_data)
             
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             
@@ -167,11 +100,7 @@ class PortfolioManagementAgent(BaseAgent):
             
         except Exception as e:
             execution_time = (datetime.utcnow() - start_time).total_seconds()
-            self.logger.error(
-                "Task execution failed",
-                error=str(e),
-                exc_info=True
-            )
+            self.logger.error("Task execution failed", error=str(e), exc_info=True)
             return AgentResult(
                 task_id=task.task_id,
                 agent_type=self.agent_type,
@@ -180,154 +109,213 @@ class PortfolioManagementAgent(BaseAgent):
                 execution_time_seconds=execution_time
             )
     
-    # =========================================================================
-    # Thematic Analysis
-    # =========================================================================
-    
-    async def _thematic_candidate_screen(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Screen for investment candidates based on a theme."""
-        theme = input_data.get("theme", "")
-        sector = input_data.get("sector")
-        min_market_cap = input_data.get("min_market_cap", 1_000_000_000)
+    async def _portfolio_risk_analysis(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze portfolio risk with REAL market data."""
+        holdings = input_data.get("holdings", [])
         
-        self.validate_input(input_data, ["theme"])
+        if not holdings:
+            # Use sample portfolio for demonstration
+            holdings = [
+                {"ticker": "AAPL", "weight": 0.15},
+                {"ticker": "MSFT", "weight": 0.12},
+                {"ticker": "GOOGL", "weight": 0.10},
+                {"ticker": "AMZN", "weight": 0.10},
+                {"ticker": "NVDA", "weight": 0.08},
+                {"ticker": "JPM", "weight": 0.08},
+                {"ticker": "V", "weight": 0.07},
+                {"ticker": "JNJ", "weight": 0.07},
+                {"ticker": "XOM", "weight": 0.06},
+                {"ticker": "PG", "weight": 0.05}
+            ]
         
-        # Build the prompt
-        prompt = f"""You are a senior equity research analyst specializing in thematic investing.
+        self.logger.info("Running portfolio risk analysis with real data", num_holdings=len(holdings))
+        
+        # Fetch real data for each holding
+        portfolio_data = []
+        for holding in holdings[:15]:  # Limit to 15 positions
+            ticker = holding.get("ticker")
+            weight = holding.get("weight", 0)
+            
+            try:
+                context = await self.data_service.get_company_context(ticker)
+                portfolio_data.append({
+                    "ticker": ticker,
+                    "name": context.name,
+                    "weight_pct": weight * 100,
+                    "sector": context.sector,
+                    "industry": context.industry,
+                    "market_cap": context.market_cap,
+                    "beta": 1.0,  # Would need to calculate
+                    "pe_ratio": context.pe_ratio,
+                    "dividend_yield": context.dividend_yield,
+                    "price_change_ytd": context.price_change_ytd,
+                    "volatility_52w": abs(context.fifty_two_week_high - context.fifty_two_week_low) / context.current_price * 100 if context.current_price else 0,
+                    "debt_to_equity": context.debt_to_equity
+                })
+            except Exception as e:
+                self.logger.warning(f"Failed to get data for {ticker}: {e}")
+        
+        prompt = f"""You are a portfolio risk analyst evaluating a portfolio using REAL market data.
 
-THEME: {theme}
-{f"SECTOR FOCUS: {sector}" if sector else ""}
+PORTFOLIO HOLDINGS (REAL DATA):
+{json.dumps(portfolio_data, indent=2)}
 
-Your task is to identify the most compelling investment candidates that benefit from this theme.
+Analyze the portfolio for:
 
-For each candidate, provide:
-1. Company name and ticker
-2. Why this company is well-positioned for the theme
-3. Revenue exposure to the theme (% of total revenue)
-4. Key competitive advantages
-5. Potential catalysts
-6. Main risks
-7. Conviction level (1-10)
+1. **CONCENTRATION RISK**
+   - Single stock concentration
+   - Sector concentration
+   - Geographic concentration
+   - Factor concentration
 
-Consider:
-- Pure-play vs. diversified exposure
-- Market position and competitive moat
-- Management track record in the space
-- Valuation relative to growth
-- Liquidity and market cap requirements
+2. **MARKET RISK**
+   - Overall portfolio beta
+   - Sensitivity to market movements
+   - Correlation to major indices
 
-Provide 5-10 candidates ranked by conviction level.
+3. **SECTOR RISK**
+   - Sector allocation breakdown
+   - Over/underweight vs benchmark
+   - Cyclical vs defensive mix
 
-Format your response as a JSON object with the following structure:
+4. **VALUATION RISK**
+   - Weighted average P/E
+   - Expensive vs cheap positions
+   - Valuation dispersion
+
+5. **QUALITY METRICS**
+   - Weighted average debt/equity
+   - Dividend coverage
+   - Earnings quality
+
+6. **RECOMMENDATIONS**
+   - Key risks to address
+   - Suggested rebalancing
+   - Hedging strategies
+
+Format as JSON:
 {{
-    "theme_analysis": {{
-        "description": "...",
-        "market_size": "...",
-        "growth_drivers": ["..."]
+    "risk_summary": {{
+        "overall_risk_score": 7,
+        "risk_level": "moderate/high/low",
+        "key_concerns": ["concern1", "concern2"]
     }},
-    "candidates": [
+    "concentration_analysis": {{
+        "top_5_weight": 55,
+        "hhi_index": 0.12,
+        "sector_concentration": {{"Technology": 45, "Financials": 15}}
+    }},
+    "risk_metrics": {{
+        "estimated_beta": 1.1,
+        "weighted_pe": 25,
+        "weighted_debt_equity": 0.8
+    }},
+    "recommendations": [
         {{
-            "ticker": "...",
-            "company_name": "...",
-            "thesis": "...",
-            "revenue_exposure": "...",
-            "competitive_advantages": ["..."],
-            "catalysts": ["..."],
-            "risks": ["..."],
-            "conviction_score": 8
+            "action": "Reduce concentration in X",
+            "rationale": "Why",
+            "priority": "high/medium/low"
         }}
     ]
 }}"""
 
-        system_prompt = """You are a world-class equity research analyst with deep expertise in thematic investing. 
-You have access to comprehensive market data and can identify emerging trends before they become mainstream.
-Always provide specific, actionable investment ideas backed by solid fundamental analysis."""
-
         response, tokens = await self.call_llm(
             prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=0.5
+            system_prompt="You are a professional portfolio risk analyst. Analyze the portfolio using the real data provided and give specific, actionable recommendations.",
+            temperature=0.4,
+            max_tokens=4096
         )
         
-        # Parse the response
-        import json
         try:
             if "```json" in response:
                 json_str = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0]
             else:
                 json_str = response
-            
             result = json.loads(json_str.strip())
         except json.JSONDecodeError:
-            result = {"raw_response": response}
+            result = {"analysis": response}
         
         result["tokens_used"] = tokens
-        result["model_used"] = "default"
-        
+        result["data_sources"] = ["FMP Company Profiles", "Market Data"]
+        result["holdings_analyzed"] = len(portfolio_data)
+        result["portfolio_data"] = portfolio_data
         return result
     
-    async def _theme_order_effects(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze first, second, and third order effects of a theme."""
-        theme = input_data.get("theme", "")
+    async def _position_sizing(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate optimal position sizes based on risk parameters."""
+        ticker = input_data.get("ticker", "AAPL")
+        portfolio_value = input_data.get("portfolio_value", 100000)
+        risk_tolerance = input_data.get("risk_tolerance", "moderate")
+        max_position_pct = input_data.get("max_position_pct", 10)
         
-        self.validate_input(input_data, ["theme"])
+        self.logger.info("Calculating position size with real data", ticker=ticker)
         
-        prompt = f"""You are analyzing the investment implications of the following theme/trend:
+        # Get real data for the stock
+        context = await self.data_service.get_company_context(ticker)
+        
+        stock_data = {
+            "ticker": ticker,
+            "name": context.name,
+            "current_price": context.current_price,
+            "market_cap": context.market_cap,
+            "pe_ratio": context.pe_ratio,
+            "volatility_range": abs(context.fifty_two_week_high - context.fifty_two_week_low) / context.current_price * 100 if context.current_price else 0,
+            "avg_volume": context.avg_volume,
+            "sector": context.sector,
+            "analyst_rating": context.analyst_rating
+        }
+        
+        prompt = f"""You are a portfolio manager calculating optimal position size.
 
-THEME: {theme}
+STOCK DATA (REAL):
+{json.dumps(stock_data, indent=2)}
 
-Perform a comprehensive order-of-effects analysis:
+PORTFOLIO PARAMETERS:
+- Portfolio Value: ${portfolio_value:,}
+- Risk Tolerance: {risk_tolerance}
+- Max Position Size: {max_position_pct}%
 
-**FIRST ORDER EFFECTS (Direct Impact)**
-- Companies/sectors that directly benefit or suffer
-- Immediate revenue/cost implications
-- Obvious winners and losers
+Calculate:
+1. Recommended position size (% of portfolio)
+2. Dollar amount to invest
+3. Number of shares
+4. Risk-adjusted rationale
+5. Entry strategy (all at once vs. scaling in)
 
-**SECOND ORDER EFFECTS (Indirect Impact)**
-- Supply chain implications
-- Adjacent industries affected
-- Competitive dynamics shifts
-- Consumer behavior changes
-
-**THIRD ORDER EFFECTS (Non-Obvious Implications)**
-- Long-term structural changes
-- Unexpected beneficiaries
-- Contrarian opportunities
-- Regulatory/policy responses
-
-For each order, identify:
-1. Specific companies (with tickers) that could benefit
-2. The mechanism of impact
-3. Time horizon for the effect to materialize
-4. Confidence level in the thesis
+Consider:
+- Stock volatility
+- Liquidity (can you exit easily?)
+- Conviction level based on fundamentals
+- Portfolio diversification needs
 
 Format as JSON:
 {{
-    "theme": "{theme}",
-    "first_order": {{
-        "effects": ["..."],
-        "beneficiaries": [{{"ticker": "...", "company": "...", "mechanism": "...", "confidence": "high/medium/low"}}]
+    "recommendation": {{
+        "position_size_pct": 5.0,
+        "dollar_amount": 5000,
+        "shares": 30,
+        "entry_strategy": "Scale in over 3 tranches"
     }},
-    "second_order": {{
-        "effects": ["..."],
-        "beneficiaries": [...]
+    "rationale": {{
+        "volatility_assessment": "...",
+        "liquidity_assessment": "...",
+        "conviction_level": "high/medium/low",
+        "key_factors": ["factor1", "factor2"]
     }},
-    "third_order": {{
-        "effects": ["..."],
-        "beneficiaries": [...]
-    }},
-    "contrarian_plays": [...]
+    "risk_management": {{
+        "stop_loss_pct": 10,
+        "stop_loss_price": 150,
+        "take_profit_levels": [{{price: 180, sell_pct: 25}}]
+    }}
 }}"""
 
         response, tokens = await self.call_llm(
             prompt=prompt,
-            system_prompt="You are a strategic investment analyst known for identifying non-obvious investment opportunities.",
-            temperature=0.6
+            system_prompt="You are a quantitative portfolio manager specializing in position sizing and risk management.",
+            temperature=0.3,
+            max_tokens=2048
         )
         
-        import json
         try:
             if "```json" in response:
                 json_str = response.split("```json")[1].split("```")[0]
@@ -335,112 +323,171 @@ Format as JSON:
                 json_str = response
             result = json.loads(json_str.strip())
         except json.JSONDecodeError:
-            result = {"raw_response": response}
+            result = {"analysis": response}
         
         result["tokens_used"] = tokens
+        result["stock_data"] = stock_data
         return result
     
-    # =========================================================================
-    # Institutional Analysis
-    # =========================================================================
-    
-    async def _institutional_clustering(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze institutional holdings clustering from 13F filings."""
-        focus_managers = input_data.get("managers", [])
-        min_position_value = input_data.get("min_position_value", 10_000_000)
+    async def _correlation_analysis(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze correlations between portfolio holdings."""
+        tickers = input_data.get("tickers", ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"])
         
-        # This would integrate with SEC 13F data
-        # For now, use LLM to analyze the concept
+        self.logger.info("Running correlation analysis", tickers=tickers)
         
-        prompt = """You are analyzing institutional investor behavior from SEC 13F filings.
-
-Identify stocks where multiple high-quality institutional investors have been accumulating positions.
-
-Consider these "smart money" indicators:
-1. Concentration of top hedge funds
-2. Recent position increases
-3. New positions from respected managers
-4. Convergence of different investment styles
-5. Insider buying alongside institutional accumulation
-
-Provide analysis of:
-1. Stocks with unusual institutional clustering
-2. The quality of the institutional holders
-3. Recent changes in positioning
-4. Potential thesis behind the accumulation
-5. Risk of crowded trade
-
-Format as JSON with specific tickers and analysis."""
-
-        response, tokens = await self.call_llm(
-            prompt=prompt,
-            system_prompt="You are an expert in analyzing institutional investor behavior and 13F filings.",
-            temperature=0.4
-        )
-        
-        import json
-        try:
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            else:
-                json_str = response
-            result = json.loads(json_str.strip())
-        except json.JSONDecodeError:
-            result = {"raw_response": response}
-        
-        result["tokens_used"] = tokens
-        return result
-    
-    async def _insider_trading_analysis(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze insider trading patterns from SEC Form 4 filings."""
-        ticker = input_data.get("ticker")
-        lookback_days = input_data.get("lookback_days", 90)
-        
-        # Fetch insider trading data if ticker provided
-        insider_data = []
-        if ticker:
+        # Get data for all tickers
+        holdings_data = []
+        for ticker in tickers[:10]:
             try:
-                insider_trades = await self.fmp.get_insider_trading(ticker, limit=50)
-                insider_data = [
-                    {
-                        "date": str(t.transaction_date),
-                        "name": t.reporting_name,
-                        "type": t.transaction_type,
-                        "shares": t.securities_transacted,
-                        "price": t.price
-                    }
-                    for t in insider_trades
-                ]
+                context = await self.data_service.get_company_context(ticker)
+                holdings_data.append({
+                    "ticker": ticker,
+                    "name": context.name,
+                    "sector": context.sector,
+                    "industry": context.industry,
+                    "price_change_ytd": context.price_change_ytd,
+                    "market_cap": context.market_cap
+                })
             except Exception as e:
-                self.logger.warning(f"Failed to fetch insider data: {e}")
+                self.logger.warning(f"Failed to get data for {ticker}: {e}")
         
-        prompt = f"""Analyze insider trading patterns for investment signals.
+        prompt = f"""Analyze the correlation characteristics of these holdings:
 
-{f"TICKER: {ticker}" if ticker else "MARKET-WIDE ANALYSIS"}
-{f"INSIDER DATA: {insider_data}" if insider_data else ""}
-
-Identify:
-1. Unusual insider buying clusters
-2. Significant purchases by executives (not just option exercises)
-3. Pattern of multiple insiders buying
-4. Timing relative to company events
-5. Historical accuracy of insider signals for this company/sector
+HOLDINGS DATA:
+{json.dumps(holdings_data, indent=2)}
 
 Provide:
-- Summary of insider activity
-- Signal strength (strong buy signal, moderate, weak, neutral, sell signal)
-- Key transactions to highlight
-- Recommended action
+1. Expected correlation matrix (qualitative assessment)
+2. Diversification score
+3. Common risk factors
+4. Suggestions for reducing correlation
+
+Format as JSON with correlation insights and recommendations."""
+
+        response, tokens = await self.call_llm(
+            prompt=prompt,
+            system_prompt="You are a quantitative analyst specializing in portfolio correlation and diversification.",
+            temperature=0.4,
+            max_tokens=2048
+        )
+        
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            else:
+                json_str = response
+            result = json.loads(json_str.strip())
+        except json.JSONDecodeError:
+            result = {"analysis": response}
+        
+        result["tokens_used"] = tokens
+        result["holdings_data"] = holdings_data
+        return result
+    
+    async def _rebalancing_recommendation(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate rebalancing recommendations."""
+        current_holdings = input_data.get("current_holdings", [])
+        target_allocation = input_data.get("target_allocation", {})
+        
+        if not current_holdings:
+            current_holdings = [
+                {"ticker": "AAPL", "current_weight": 0.18, "target_weight": 0.12},
+                {"ticker": "MSFT", "current_weight": 0.15, "target_weight": 0.12},
+                {"ticker": "GOOGL", "current_weight": 0.08, "target_weight": 0.10},
+                {"ticker": "JPM", "current_weight": 0.05, "target_weight": 0.08}
+            ]
+        
+        # Enrich with real data
+        enriched_holdings = []
+        for h in current_holdings[:10]:
+            try:
+                context = await self.data_service.get_company_context(h["ticker"])
+                enriched_holdings.append({
+                    **h,
+                    "name": context.name,
+                    "current_price": context.current_price,
+                    "price_change_ytd": context.price_change_ytd,
+                    "pe_ratio": context.pe_ratio
+                })
+            except:
+                enriched_holdings.append(h)
+        
+        prompt = f"""Generate rebalancing recommendations for this portfolio:
+
+CURRENT VS TARGET ALLOCATIONS:
+{json.dumps(enriched_holdings, indent=2)}
+
+Provide:
+1. Specific trades to execute
+2. Tax-efficient rebalancing strategy
+3. Priority order for trades
+4. Market timing considerations
+
+Format as JSON with specific trade recommendations."""
+
+        response, tokens = await self.call_llm(
+            prompt=prompt,
+            system_prompt="You are a portfolio manager specializing in tax-efficient rebalancing strategies.",
+            temperature=0.3,
+            max_tokens=2048
+        )
+        
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            else:
+                json_str = response
+            result = json.loads(json_str.strip())
+        except json.JSONDecodeError:
+            result = {"analysis": response}
+        
+        result["tokens_used"] = tokens
+        return result
+    
+    async def _sector_exposure(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze sector exposure of portfolio."""
+        holdings = input_data.get("holdings", [
+            {"ticker": "AAPL", "weight": 0.15},
+            {"ticker": "MSFT", "weight": 0.12},
+            {"ticker": "JPM", "weight": 0.10},
+            {"ticker": "XOM", "weight": 0.08},
+            {"ticker": "JNJ", "weight": 0.08}
+        ])
+        
+        # Get sector data for each holding
+        sector_data = []
+        for h in holdings[:15]:
+            try:
+                context = await self.data_service.get_company_context(h["ticker"])
+                sector_data.append({
+                    "ticker": h["ticker"],
+                    "weight": h["weight"],
+                    "sector": context.sector,
+                    "industry": context.industry
+                })
+            except:
+                pass
+        
+        prompt = f"""Analyze the sector exposure of this portfolio:
+
+HOLDINGS BY SECTOR:
+{json.dumps(sector_data, indent=2)}
+
+Provide:
+1. Sector allocation breakdown
+2. Comparison to S&P 500 weights
+3. Over/underweight analysis
+4. Sector rotation recommendations
 
 Format as JSON."""
 
         response, tokens = await self.call_llm(
             prompt=prompt,
-            system_prompt="You are an expert in analyzing insider trading patterns and their predictive value.",
-            temperature=0.3
+            system_prompt="You are a sector strategist analyzing portfolio allocations.",
+            temperature=0.4,
+            max_tokens=2048
         )
         
-        import json
         try:
             if "```json" in response:
                 json_str = response.split("```json")[1].split("```")[0]
@@ -448,56 +495,27 @@ Format as JSON."""
                 json_str = response
             result = json.loads(json_str.strip())
         except json.JSONDecodeError:
-            result = {"raw_response": response}
+            result = {"analysis": response}
         
         result["tokens_used"] = tokens
-        result["insider_data"] = insider_data
+        result["sector_data"] = sector_data
         return result
     
-    # =========================================================================
-    # Pure Play Analysis
-    # =========================================================================
-    
-    async def _pure_play_filter(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Filter and rank pure-play exposure to a theme."""
-        theme = input_data.get("theme", "")
-        candidates = input_data.get("candidates", [])
-        min_revenue_exposure = input_data.get("min_revenue_exposure", 50)
-        
-        self.validate_input(input_data, ["theme"])
-        
-        prompt = f"""You are evaluating companies for pure-play exposure to:
+    async def _generic_portfolio_analysis(self, prompt_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generic portfolio analysis handler."""
+        prompt = f"""Perform {prompt_name.replace('_', ' ')} analysis.
 
-THEME: {theme}
-MINIMUM REVENUE EXPOSURE: {min_revenue_exposure}%
-{f"CANDIDATES TO EVALUATE: {candidates}" if candidates else ""}
+Input: {json.dumps(input_data, indent=2)}
 
-For each company, assess:
-1. Revenue exposure to the theme (% of total)
-2. Profit exposure (may differ from revenue)
-3. Strategic commitment to the theme
-4. Competitive position within the theme
-5. Valuation premium/discount for pure-play status
-
-Rank companies by:
-- Pure-play score (higher = more focused exposure)
-- Quality score (competitive position, management, financials)
-- Value score (valuation relative to growth)
-
-Identify:
-- True pure-plays (>70% exposure)
-- Focused players (50-70% exposure)
-- Diversified exposure (<50% but meaningful)
-
-Format as JSON with detailed scoring."""
+Provide comprehensive analysis in JSON format."""
 
         response, tokens = await self.call_llm(
             prompt=prompt,
-            system_prompt="You are an expert at identifying pure-play investment opportunities.",
-            temperature=0.4
+            system_prompt="You are a portfolio management expert.",
+            temperature=0.4,
+            max_tokens=2048
         )
         
-        import json
         try:
             if "```json" in response:
                 json_str = response.split("```json")[1].split("```")[0]
@@ -505,182 +523,7 @@ Format as JSON with detailed scoring."""
                 json_str = response
             result = json.loads(json_str.strip())
         except json.JSONDecodeError:
-            result = {"raw_response": response}
+            result = {"analysis": response}
         
         result["tokens_used"] = tokens
         return result
-    
-    # =========================================================================
-    # Source Scanning
-    # =========================================================================
-    
-    async def _newsletter_scanning(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Scan investment newsletters for ideas."""
-        sources = input_data.get("sources", [])
-        focus_sectors = input_data.get("sectors", [])
-        
-        prompt = f"""You are scanning investment newsletters and publications for actionable ideas.
-
-{f"FOCUS SECTORS: {focus_sectors}" if focus_sectors else ""}
-
-Identify investment ideas from:
-1. Prominent investment newsletters (Substack, etc.)
-2. Hedge fund letters
-3. Research publications
-4. Industry expert commentary
-
-For each idea found:
-- Source and author credibility
-- Core thesis summary
-- Key data points supporting the thesis
-- Potential catalysts mentioned
-- Risks identified
-- Your assessment of the idea quality
-
-Prioritize:
-- Non-consensus ideas
-- Ideas with specific, verifiable catalysts
-- Ideas from managers with strong track records
-
-Format as JSON with source attribution."""
-
-        response, tokens = await self.call_llm(
-            prompt=prompt,
-            system_prompt="You are a research analyst who synthesizes investment ideas from multiple sources.",
-            temperature=0.5
-        )
-        
-        import json
-        try:
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            else:
-                json_str = response
-            result = json.loads(json_str.strip())
-        except json.JSONDecodeError:
-            result = {"raw_response": response}
-        
-        result["tokens_used"] = tokens
-        return result
-    
-    async def _social_sentiment_scan(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Scan social media for sentiment and emerging ideas."""
-        platforms = input_data.get("platforms", ["twitter", "reddit", "stocktwits"])
-        tickers = input_data.get("tickers", [])
-        
-        prompt = f"""Analyze social media sentiment for investment signals.
-
-PLATFORMS: {platforms}
-{f"TICKERS TO MONITOR: {tickers}" if tickers else "SCAN FOR EMERGING IDEAS"}
-
-Identify:
-1. Unusual volume of discussion
-2. Sentiment shifts (bullish/bearish)
-3. Emerging narratives
-4. Retail vs. institutional sentiment divergence
-5. Potential meme stock candidates
-6. Contrarian opportunities (hated stocks)
-
-For each signal:
-- Platform and reach
-- Sentiment score
-- Key narratives
-- Risk of sentiment-driven volatility
-- Actionability for institutional investors
-
-Format as JSON."""
-
-        response, tokens = await self.call_llm(
-            prompt=prompt,
-            system_prompt="You analyze social media sentiment while filtering noise from signal.",
-            temperature=0.5
-        )
-        
-        import json
-        try:
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            else:
-                json_str = response
-            result = json.loads(json_str.strip())
-        except json.JSONDecodeError:
-            result = {"raw_response": response}
-        
-        result["tokens_used"] = tokens
-        return result
-    
-    async def _contrarian_opportunities(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Identify contrarian investment opportunities."""
-        sector = input_data.get("sector")
-        
-        prompt = f"""Identify contrarian investment opportunities.
-
-{f"SECTOR FOCUS: {sector}" if sector else "MARKET-WIDE SCAN"}
-
-Look for:
-1. **Hated stocks** - Companies with extremely negative sentiment that may be overdone
-2. **Fallen angels** - Quality companies that have fallen out of favor
-3. **Turnaround situations** - Companies with improving fundamentals not yet recognized
-4. **Sector rotations** - Out-of-favor sectors due for a comeback
-5. **Short squeezes** - High short interest with improving fundamentals
-
-For each opportunity:
-- Why the market hates it
-- Why the market may be wrong
-- Catalysts for re-rating
-- Downside risks if consensus is right
-- Time horizon for thesis to play out
-- Position sizing recommendation given risk
-
-Format as JSON with conviction scores."""
-
-        response, tokens = await self.call_llm(
-            prompt=prompt,
-            system_prompt="You are a contrarian investor who profits from market overreactions.",
-            temperature=0.6
-        )
-        
-        import json
-        try:
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            else:
-                json_str = response
-            result = json.loads(json_str.strip())
-        except json.JSONDecodeError:
-            result = {"raw_response": response}
-        
-        result["tokens_used"] = tokens
-        return result
-
-
-# =============================================================================
-# Agent Runner
-# =============================================================================
-
-async def run_agent():
-    """Run the idea generation agent as a service."""
-    agent = IdeaGenerationAgent()
-    redis = get_redis_client()
-    await redis.connect()
-    
-    channel = f"investment-agents:tasks:idea_generation_agent"
-    
-    logger.info("Idea Generation Agent started, listening for tasks...")
-    
-    async def handle_message(channel: str, message: str):
-        import json
-        task_data = json.loads(message)
-        task = AgentTask(**task_data)
-        
-        result = await agent.run(task)
-        
-        # Publish result
-        result_channel = f"investment-agents:results:{task.task_id}"
-        await redis.publish(result_channel, result.model_dump_json())
-    
-    await redis.subscribe([channel], handle_message)
-
-
-if __name__ == "__main__":
-    asyncio.run(run_agent())

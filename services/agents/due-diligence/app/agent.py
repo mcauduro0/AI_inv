@@ -20,6 +20,7 @@ from shared.clients.polygon_client import get_polygon_client
 from shared.clients.fmp_client import get_fmp_client
 from shared.clients.sec_client import get_sec_client
 from shared.clients.redis_client import get_redis_client
+from shared.clients.data_service import get_data_service
 
 logger = structlog.get_logger(__name__)
 
@@ -90,6 +91,7 @@ class DueDiligenceAgent(BaseAgent):
         self.polygon = get_polygon_client()
         self.fmp = get_fmp_client()
         self.sec = get_sec_client()
+        self.data_service = get_data_service()
     
     def get_supported_prompts(self) -> List[str]:
         return self.SUPPORTED_PROMPTS
