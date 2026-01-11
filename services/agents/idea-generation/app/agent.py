@@ -153,7 +153,8 @@ class IdeaGenerationAgent(BaseAgent):
             elif prompt_name == "contrarian_opportunities":
                 result = await self._contrarian_opportunities(input_data)
             else:
-                raise ValueError(f"Unsupported prompt: {prompt_name}")
+                # Use generic handler for database-loaded prompts
+                result = await self._execute_from_database_prompt(prompt_name, input_data)
             
             execution_time = (datetime.utcnow() - start_time).total_seconds()
             
@@ -799,6 +800,108 @@ Format as JSON with conviction scores."""
             result = {"raw_response": response}
         
         result["tokens_used"] = tokens
+        return result
+    
+    async def _execute_from_database_prompt(
+        self,
+        prompt_name: str,
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute analysis using a prompt loaded from the database.
+        
+        This allows the agent to handle any prompt defined in the database,
+        not just the hardcoded ones.
+        """
+        import json
+        from shared.prompts.loader import render_template
+        
+        self.logger.info(f"Executing database prompt: {prompt_name}")
+        
+        # Extract tickers from input data for real data fetching
+        tickers = []
+        if "ticker" in input_data:
+            tickers.append(input_data["ticker"])
+        if "tickers" in input_data:
+            tickers.extend(input_data["tickers"])
+        if "theme" in input_data:
+            # For thematic analysis, we might want to screen for relevant stocks
+            pass
+        
+        # Fetch real market data for any tickers
+        market_data = {}
+        for ticker in tickers[:10]:
+            try:
+                context = await self.data_service.get_company_context(ticker)
+                market_data[ticker] = {
+                    "name": context.name,
+                    "sector": context.sector,
+                    "industry": context.industry,
+                    "market_cap": context.market_cap,
+                    "current_price": context.current_price,
+                    "price_change_ytd": context.price_change_ytd,
+                    "pe_ratio": context.pe_ratio,
+                    "revenue_growth": context.revenue_growth,
+                    "gross_margin": context.gross_margin,
+                    "operating_margin": context.operating_margin,
+                    "roe": context.roe,
+                    "debt_to_equity": context.debt_to_equity,
+                    "analyst_rating": context.analyst_rating,
+                    "recent_news": context.recent_news[:3] if context.recent_news else []
+                }
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch data for {ticker}: {e}")
+        
+        # Build a comprehensive prompt
+        prompt = f"""You are a senior investment analyst performing {prompt_name.replace('_', ' ')} analysis.
+
+ANALYSIS TYPE: {prompt_name}
+
+INPUT PARAMETERS:
+{json.dumps(input_data, indent=2)}
+
+"""
+        
+        if market_data:
+            prompt += f"""REAL MARKET DATA:
+{json.dumps(market_data, indent=2)}
+
+"""
+        
+        prompt += """Provide comprehensive analysis in JSON format with:
+1. Key findings and insights
+2. Specific recommendations with rationale
+3. Risk factors and concerns
+4. Confidence level (1-10)
+5. Data sources used
+
+Be specific and actionable. Use the real market data provided."""
+        
+        system_prompt = """You are a world-class equity research analyst with deep expertise in investment analysis.
+You have access to real market data and provide specific, actionable recommendations.
+Always format your response as valid JSON."""
+        
+        response, tokens = await self.call_llm(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=0.4,
+            max_tokens=4096
+        )
+        
+        try:
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            else:
+                json_str = response
+            result = json.loads(json_str.strip())
+        except json.JSONDecodeError:
+            result = {"analysis": response, "raw_response": True}
+        
+        result["tokens_used"] = tokens
+        result["prompt_name"] = prompt_name
+        result["data_sources"] = list(market_data.keys()) if market_data else []
+        result["market_data"] = market_data
+        
         return result
 
 
