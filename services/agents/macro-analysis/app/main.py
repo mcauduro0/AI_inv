@@ -253,10 +253,6 @@ async def generate_ideas(request: IdeaGenerationRequest):
             input_data=request.parameters
         )
         result = await agent.execute(task)
-        # OLD: result = await agent.execute({
-            "strategy": request.strategy,
-            "parameters": request.parameters
-        })
         
         execution_time = (datetime.utcnow() - start_time).total_seconds()
         
@@ -342,10 +338,6 @@ async def _execute_async_task(
             input_data=request.parameters
         )
         result = await agent.execute(task)
-        # OLD: result = await agent.execute({
-            "strategy": strategy,
-            "parameters": parameters
-        })
         
         # Store result
         if redis_client:
