@@ -22,7 +22,7 @@ sys.path.insert(0, "/app")
 from shared.config.settings import settings
 from shared.db.repository import (
     get_session, init_db, WorkflowRepository, AgentTaskRepository,
-    ResearchProjectRepository
+    ResearchProjectRepository, PromptTemplateRepository
 )
 from shared.db.models import TaskStatus, WorkflowStatus
 from shared.clients.redis_client import get_redis_client
@@ -669,6 +669,102 @@ async def get_task_metrics(days: int = 7):
         return {
             "period_days": days,
             "by_agent": metrics
+        }
+
+
+# =============================================================================
+# Prompt Library Routes
+# =============================================================================
+
+@app.get("/prompts")
+async def list_prompts(
+    category: Optional[str] = None,
+    agent_type: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """List available prompts from the database."""
+    async with get_session() as session:
+        repo = PromptTemplateRepository(session)
+        
+        if category:
+            prompts = await repo.get_by_category(category)
+        else:
+            prompts = await repo.list(limit=limit, offset=offset)
+        
+        # Filter by search if provided
+        if search:
+            search_lower = search.lower()
+            prompts = [
+                p for p in prompts 
+                if search_lower in p.name.lower() or 
+                   (p.description and search_lower in p.description.lower())
+            ]
+        
+        return {
+            "items": [
+                {
+                    "id": str(p.id),
+                    "name": p.name,
+                    "category": p.category,
+                    "subcategory": p.subcategory,
+                    "description": p.description,
+                    "template": p.template,
+                    "variables": p.variables,
+                    "source": p.source,
+                    "usage_count": p.usage_count
+                }
+                for p in prompts
+            ],
+            "total": len(prompts)
+        }
+
+
+@app.get("/prompts/categories")
+async def list_prompt_categories():
+    """List all prompt categories with counts."""
+    async with get_session() as session:
+        from sqlalchemy import func, select
+        from shared.db.models import PromptTemplate
+        
+        result = await session.execute(
+            select(
+                PromptTemplate.category,
+                func.count(PromptTemplate.id).label('count')
+            )
+            .where(PromptTemplate.is_active == True)
+            .group_by(PromptTemplate.category)
+        )
+        
+        categories = [
+            {"name": row.category, "count": row.count}
+            for row in result.all()
+        ]
+        
+        return {"categories": sorted(categories, key=lambda x: x["count"], reverse=True)}
+
+
+@app.get("/prompts/{prompt_id}")
+async def get_prompt(prompt_id: str):
+    """Get a specific prompt by ID."""
+    async with get_session() as session:
+        repo = PromptTemplateRepository(session)
+        prompt = await repo.get(UUID(prompt_id))
+        
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        
+        return {
+            "id": str(prompt.id),
+            "name": prompt.name,
+            "category": prompt.category,
+            "subcategory": prompt.subcategory,
+            "description": prompt.description,
+            "template": prompt.template,
+            "variables": prompt.variables,
+            "source": prompt.source,
+            "usage_count": prompt.usage_count
         }
 
 
