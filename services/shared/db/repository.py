@@ -31,17 +31,47 @@ T = TypeVar("T", bound=Base)
 
 def get_async_engine():
     """Create async database engine."""
+    import ssl
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    
     # Convert sync URL to async
     url = settings.database.url
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://")
     
+    # Parse URL and handle SSL mode for asyncpg compatibility
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    
+    # Check if sslmode is specified
+    ssl_mode = query_params.pop('sslmode', [None])[0]
+    
+    # Rebuild URL without sslmode parameter
+    new_query = urlencode(query_params, doseq=True)
+    clean_url = urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+    
+    # Configure SSL context for asyncpg
+    connect_args = {}
+    if ssl_mode in ('require', 'verify-ca', 'verify-full'):
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connect_args['ssl'] = ssl_context
+    
     return create_async_engine(
-        url,
+        clean_url,
         pool_size=settings.database.pool_size,
         max_overflow=settings.database.max_overflow,
         pool_timeout=settings.database.pool_timeout,
-        echo=settings.database.echo
+        echo=settings.database.echo,
+        connect_args=connect_args
     )
 
 

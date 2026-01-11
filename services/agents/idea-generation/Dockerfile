@@ -1,5 +1,6 @@
 # =============================================================================
 # Idea Generation Agent Service Dockerfile
+# Build context: services/
 # =============================================================================
 
 FROM python:3.11-slim
@@ -12,15 +13,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy shared requirements and install (from agents/ context)
-COPY ../shared/requirements.txt /tmp/requirements.txt
+# Copy shared requirements and install
+COPY shared/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy shared modules
-COPY ../shared /app/shared
+COPY shared /app/shared
 
 # Copy agent code
-COPY idea-generation /app/idea-generation
+COPY agents/idea-generation /app/idea-generation
 
 # Set Python path
 ENV PYTHONPATH=/app
