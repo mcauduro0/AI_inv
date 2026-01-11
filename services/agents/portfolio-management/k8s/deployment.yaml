@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portfolio-management-agent
+  namespace: investment-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portfolio-management-agent
+  template:
+    metadata:
+      labels:
+        app: portfolio-management-agent
+    spec:
+      containers:
+      - name: portfolio-management-agent
+        image: registry.digitalocean.com/investment-agentregistry/portfolio-management-agent:latest
+        ports:
+        - containerPort: 8012
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets

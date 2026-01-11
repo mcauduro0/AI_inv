@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: macro-analysis-agent
+  namespace: investment-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: macro-analysis-agent
+  template:
+    metadata:
+      labels:
+        app: macro-analysis-agent
+    spec:
+      containers:
+      - name: macro-analysis-agent
+        image: registry.digitalocean.com/investment-agentregistry/macro-analysis-agent:latest
+        ports:
+        - containerPort: 8013
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets

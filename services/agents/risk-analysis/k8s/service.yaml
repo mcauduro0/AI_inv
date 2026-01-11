@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-analysis-agent
+  namespace: investment-agent
+spec:
+  selector:
+    app: risk-analysis-agent
+  ports:
+    - protocol: TCP
+      port: 8014
+      targetPort: 8014

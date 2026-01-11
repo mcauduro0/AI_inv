@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-analysis-agent
+  namespace: investment-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: risk-analysis-agent
+  template:
+    metadata:
+      labels:
+        app: risk-analysis-agent
+    spec:
+      containers:
+      - name: risk-analysis-agent
+        image: registry.digitalocean.com/investment-agentregistry/risk-analysis-agent:latest
+        ports:
+        - containerPort: 8014
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets

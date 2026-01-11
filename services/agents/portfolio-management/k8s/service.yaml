@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: portfolio-management-agent
+  namespace: investment-agent
+spec:
+  selector:
+    app: portfolio-management-agent
+  ports:
+    - protocol: TCP
+      port: 8012
+      targetPort: 8012

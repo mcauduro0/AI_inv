@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentiment-analysis-agent
+  namespace: investment-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentiment-analysis-agent
+  template:
+    metadata:
+      labels:
+        app: sentiment-analysis-agent
+    spec:
+      containers:
+      - name: sentiment-analysis-agent
+        image: registry.digitalocean.com/investment-agentregistry/sentiment-analysis-agent:latest
+        ports:
+        - containerPort: 8015
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets
