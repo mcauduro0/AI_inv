@@ -256,17 +256,31 @@ async def generate_ideas(request: IdeaGenerationRequest):
         
         execution_time = (datetime.utcnow() - start_time).total_seconds()
         
-        if result.get("status") == "error":
-            raise HTTPException(status_code=400, detail=result.get("error"))
+        # Handle AgentResult object
+        if hasattr(result, 'success') and not result.success:
+            raise HTTPException(status_code=400, detail=result.error or "Execution failed")
+        
+        # Extract data from AgentResult
+        result_data = result.data if hasattr(result, 'data') else result
+        if isinstance(result_data, dict):
+            ideas = result_data.get("ideas", [])
+            analysis = result_data.get("analysis", result_data)
+            metadata = result_data.get("metadata", {})
+            timestamp = result_data.get("timestamp", datetime.utcnow().isoformat())
+        else:
+            ideas = []
+            analysis = {"raw_result": str(result_data)}
+            metadata = {}
+            timestamp = datetime.utcnow().isoformat()
         
         return IdeaGenerationResponse(
             task_id=f"ig-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
             status="completed",
             strategy=request.strategy,
-            timestamp=result.get("timestamp", datetime.utcnow().isoformat()),
-            ideas=result.get("ideas", []),
-            analysis=result.get("analysis", {}),
-            metadata=result.get("metadata", {}),
+            timestamp=timestamp,
+            ideas=ideas,
+            analysis=analysis,
+            metadata=metadata,
             execution_time_seconds=execution_time
         )
         
