@@ -306,10 +306,18 @@ class DataService:
     async def _get_recent_news(self, ticker: str) -> List[str]:
         """Get recent news headlines."""
         try:
-            news = await self.polygon.get_news(ticker=ticker, limit=10)
+            import asyncio
+            # Add timeout to prevent hanging
+            news = await asyncio.wait_for(
+                self.polygon.get_news(ticker=ticker, limit=5),
+                timeout=10.0
+            )
             return [article.title for article in news[:5]]
+        except asyncio.TimeoutError:
+            self.logger.debug("News fetch timed out", ticker=ticker)
+            return []
         except Exception as e:
-            self.logger.warning("News fetch failed", ticker=ticker, error=str(e))
+            self.logger.debug("News fetch failed", ticker=ticker, error=str(e))
             return []
     
     async def _get_insider_activity(self, ticker: str) -> Dict[str, int]:

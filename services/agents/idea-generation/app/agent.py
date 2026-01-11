@@ -212,13 +212,18 @@ class IdeaGenerationAgent(BaseAgent):
             self.logger.warning(f"Stock screening failed: {e}")
             screened_stocks = []
         
-        # Step 2: Get detailed data for top candidates
+        # Step 2: Get detailed data for top candidates (limit to 5 for speed)
         candidate_data = []
-        for stock in screened_stocks[:20]:  # Analyze top 20
+        import asyncio
+        for stock in screened_stocks[:5]:  # Analyze top 5 for faster response
             ticker = stock.get("symbol")
             if ticker:
                 try:
-                    context = await self.data_service.get_company_context(ticker)
+                    # Add timeout to prevent hanging
+                    context = await asyncio.wait_for(
+                        self.data_service.get_company_context(ticker),
+                        timeout=30.0
+                    )
                     candidate_data.append({
                         "ticker": ticker,
                         "name": context.name,
