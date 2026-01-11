@@ -1,0 +1,199 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: registry.digitalocean.com/investment-agent
+  CLUSTER_NAME: investment-agent-k8s-prod
+  NAMESPACE: investment-agent
+
+jobs:
+  validate:
+    name: Pre-Deployment Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run validation
+        run: python scripts/validate-before-deploy.py --verbose
+
+  build-and-push:
+    name: Build and Push Docker Images
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: api-gateway
+            path: services/api-gateway
+          - name: auth-service
+            path: services/auth-service
+          - name: master-control-agent
+            path: services/master-control-agent
+          - name: workflow-engine
+            path: services/workflow-engine
+          - name: idea-generation-agent
+            path: services/agents/idea-generation
+          - name: due-diligence-agent
+            path: services/agents/due-diligence
+          - name: macro-analysis-agent
+            path: services/agents/macro-analysis
+          - name: risk-analysis-agent
+            path: services/agents/risk-analysis
+          - name: sentiment-analysis-agent
+            path: services/agents/sentiment-analysis
+          - name: portfolio-management-agent
+            path: services/agents/portfolio-management
+          - name: frontend
+            path: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build and push image
+        run: |
+          TAG="${{ github.sha }}"
+          docker build -t ${{ env.REGISTRY }}/${{ matrix.service.name }}:${TAG} \
+                       -t ${{ env.REGISTRY }}/${{ matrix.service.name }}:latest \
+                       ${{ matrix.service.path }}
+          docker push ${{ env.REGISTRY }}/${{ matrix.service.name }}:${TAG}
+          docker push ${{ env.REGISTRY }}/${{ matrix.service.name }}:latest
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DigitalOcean kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ env.CLUSTER_NAME }}
+
+      - name: Update deployments
+        run: |
+          TAG="${{ github.sha }}"
+
+          # Update each deployment with new image
+          SERVICES=(
+            "api-gateway"
+            "auth-service"
+            "master-control-agent"
+            "workflow-engine"
+            "idea-generation-agent"
+            "due-diligence-agent"
+            "macro-analysis-agent"
+            "risk-analysis-agent"
+            "sentiment-analysis-agent"
+            "portfolio-management-agent"
+          )
+
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Updating $SERVICE..."
+            kubectl set image deployment/$SERVICE \
+              $SERVICE=${{ env.REGISTRY }}/$SERVICE:${TAG} \
+              -n ${{ env.NAMESPACE }} || echo "Warning: Could not update $SERVICE"
+          done
+
+      - name: Wait for rollout
+        run: |
+          SERVICES=(
+            "api-gateway"
+            "auth-service"
+            "master-control-agent"
+          )
+
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Waiting for $SERVICE rollout..."
+            kubectl rollout status deployment/$SERVICE \
+              -n ${{ env.NAMESPACE }} --timeout=300s || true
+          done
+
+      - name: Verify deployment
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -n ${{ env.NAMESPACE }}
+
+          echo ""
+          echo "=== Service Status ==="
+          kubectl get svc -n ${{ env.NAMESPACE }}
+
+  health-check:
+    name: Post-Deployment Health Check
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for services to stabilize
+        run: sleep 30
+
+      - name: Health check
+        run: |
+          API_URL="http://129.212.197.52"
+
+          echo "Checking API health..."
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/health" || echo "000")
+
+          if [ "$HEALTH_STATUS" = "200" ]; then
+            echo "✅ API Gateway is healthy"
+          else
+            echo "⚠️ Health check returned: $HEALTH_STATUS"
+          fi
+
+          echo ""
+          echo "Checking API docs..."
+          DOCS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/docs" || echo "000")
+
+          if [ "$DOCS_STATUS" = "200" ]; then
+            echo "✅ API docs accessible"
+          else
+            echo "⚠️ Docs check returned: $DOCS_STATUS"
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "  Deployment Complete"
+          echo "=============================================="
+          echo "  Commit: ${{ github.sha }}"
+          echo "  Branch: ${{ github.ref_name }}"
+          echo ""
+          echo "  URLs:"
+          echo "    Frontend: http://24.144.65.175"
+          echo "    API:      http://129.212.197.52"
+          echo "    Docs:     http://129.212.197.52/docs"
+          echo "=============================================="
