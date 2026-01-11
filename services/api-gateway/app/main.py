@@ -615,24 +615,32 @@ async def list_prompts(
 @app.get("/api/prompts/categories", tags=["Prompts"])
 async def list_prompt_categories(user: dict = Depends(optional_auth)):
     """List all prompt categories with counts."""
-    categories = await redis_client.smembers("prompts:categories")
-    
-    result = []
-    for cat in categories:
-        count = await redis_client.scard(f"prompts:category:{cat}")
-        result.append({"name": cat, "count": count})
-    
-    return {"categories": sorted(result, key=lambda x: x["count"], reverse=True)}
+    try:
+        response = await http_client.get(f"{settings.MCA_SERVICE_URL}/prompts/categories")
+        return response.json()
+    except httpx.RequestError:
+        # Fallback to Redis cache
+        categories = await redis_client.smembers("prompts:categories")
+        result = []
+        for cat in categories:
+            count = await redis_client.scard(f"prompts:category:{cat}")
+            result.append({"name": cat, "count": count})
+        return {"categories": sorted(result, key=lambda x: x["count"], reverse=True)}
 
 @app.get("/api/prompts/{prompt_id}", tags=["Prompts"])
 async def get_prompt(prompt_id: str, user: dict = Depends(optional_auth)):
     """Get a specific prompt by ID."""
-    prompt_data = await redis_client.hgetall(f"prompt:{prompt_id}")
-    
-    if not prompt_data:
-        raise HTTPException(status_code=404, detail="Prompt not found")
-    
-    return prompt_data
+    try:
+        response = await http_client.get(f"{settings.MCA_SERVICE_URL}/prompts/{prompt_id}")
+        if response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        return response.json()
+    except httpx.RequestError:
+        # Fallback to Redis cache
+        prompt_data = await redis_client.hgetall(f"prompt:{prompt_id}")
+        if not prompt_data:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        return prompt_data
 
 @app.post("/api/prompts/execute", tags=["Prompts"])
 async def execute_prompt(
